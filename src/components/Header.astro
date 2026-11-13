@@ -1,0 +1,68 @@
+---
+interface Props {}
+---
+<header>
+  <div class="wrap hdr">
+    <a class="logo" href="/" aria-label="Growtick Academy home">
+      <img class="logo-img logo-light" src="/brand/logo-wordmark-light.webp" alt="Growtick Academy" width="180" height="44" />
+      <img class="logo-img logo-dark" src="/brand/logo-wordmark-dark.webp" alt="Growtick Academy" width="180" height="44" />
+    </a>
+
+    <nav class="hdr-nav">
+      <a href="/">Home</a>
+      <a href="/courses">Courses</a>
+    </nav>
+
+    <div class="hdr-actions">
+      <a class="btn btn--ghost btn--sm" href="https://growtick.in" target="_blank" rel="noopener">Visit growtick.in</a>
+      <button id="theme-toggle" class="btn btn--ghost btn--sm" aria-label="Toggle dark theme" type="button">
+        <span class="sr-only">Toggle dark theme</span>
+        <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<style>
+  .hdr {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--hdr-bg);
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    backdrop-filter: blur(6px);
+  }
+  .logo { display: inline-flex; align-items: center; text-decoration: none; }
+  .logo-img { display: block; height: 1.35rem; width: auto; }
+  .logo-dark { display: none; }
+  [data-theme='dark'] .logo-light { display: none; }
+  [data-theme='dark'] .logo-dark { display: block; }
+  .hdr-nav { display: none; gap: 1.4rem; align-items: center; }
+  .hdr-nav a { text-decoration: none; color: var(--text); font-weight: 600; font-size: 0.95rem; }
+  .hdr-nav a:hover { color: var(--brand-text); }
+  .hdr-actions { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+  @media (min-width: 768px) {
+    .hdr-nav { display: flex; }
+  }
+  .btn--ghost.btn--sm { min-height: 38px; padding: 0.45rem 0.9rem; font-size: 0.9rem; }
+  .theme-icon { width: 1.1rem; height: 1.1rem; }
+  .theme-icon-moon { display: none; }
+  [data-theme='dark'] .theme-icon-sun { display: none; }
+  [data-theme='dark'] .theme-icon-moon { display: block; }
+</style>
+
+<script>
+  (() => {
+    const btn = document.getElementById('theme-toggle');
+    const root = document.documentElement;
+    if (!btn) return;
+    const set = (t) => { root.dataset.theme = t; try { localStorage.setItem('theme', t); } catch (e) {} };
+    set(root.dataset.theme === 'dark' ? 'light' : 'dark');
+    btn.addEventListener('click', () => set(root.dataset.theme === 'dark' ? 'light' : 'dark'));
+  })();
+</script>

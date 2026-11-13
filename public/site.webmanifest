@@ -1,0 +1,13 @@
+{
+  "name": "Growtick",
+  "short_name": "Growtick",
+  "description": "Ideas That Move Business Forward — learning, digital and business support in Bengaluru",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fbfaff",
+  "theme_color": "#6421a6",
+  "icons": [
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

@@ -1,0 +1,94 @@
+---
+import Base from '../layouts/Base.astro';
+import { formatInTimeZone } from 'date-fns-tz';
+---
+<Base title="Growtick Academy — Register, learn, get certified" description="Growtick Academy: offline batches and online courses. Register for a course, attend, and receive your certificate.">
+  <section class="section hero">
+    <div class="wrap">
+      <div class="grid">
+        <div class="hero-content">
+          <p class="overline">Growtick Academy</p>
+          <h1>Master Your GST Compliance</h1>
+          <p class="lead">A practical, career-ready GST program for students and young professionals. Expert-led sessions, real-world examples, and a Certificate of Appreciation.</p>
+          <div class="batch-card card">
+            <div class="batch__meta">
+              <strong class="batch__when">Sun, 15 Nov 2026 · 2:00–5:00 PM</strong>
+              <span class="batch__divider">·</span>
+              <span class="batch__where">Chickpet Pathshala Hall, Shri Adinath Jain Temple, Chickpet, Bangalore</span>
+            </div>
+            <div class="batch__fee">Fee ₹49 · pay on arrival · limited seats</div>
+          </div>
+          <div class="btn-row mt">
+            <a href="/courses/gst-compliance" class="btn">Register for the batch →</a>
+            <a href="/verify" class="btn btn--ghost">Verify a certificate</a>
+          </div>
+        </div>
+        <div class="hero-art">
+          <div class="card" style="border:none; box-shadow:var(--shadow-hover);">
+            <img src="/academy/gst-poster-1000.webp" alt="Master Your GST Compliance poster" />
+          </div>
+          <p class="muted" style="text-align:center; font-size:0.9rem;">Poster for the 15 Nov offline batch — register on the course page.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="grid--2">
+        <div class="card">
+          <p class="overline">Step 1</p>
+          <h2>Register</h2>
+          <p>Sign up for the GST batch (offline) or enrol in an online course. No login needed for offline registration — just your name, mobile and email.</p>
+        </div>
+        <div class="card">
+          <p class="overline">Step 2</p>
+          <h2>Attend</h2>
+          <p>Attend the session at Chickpet Pathshala Hall or complete recorded lessons, notes and quizzes online at your own pace.</p>
+        </div>
+        <div class="card">
+          <p class="overline">Step 3</p>
+          <h2>Certificate</h2>
+          <p>Marked present (offline) or passed the final quiz (online) → receive your Certificate of Appreciation by email, verifiable at academy.growtick.in/verify.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="grid--3">
+        <div class="card">
+          <p class="overline">Verify a certificate</p>
+          <p>Check authenticity instantly by certificate code.</p>
+          <a href="/verify" class="btn btn--sm btn--ghost">Go to verify →</a>
+        </div>
+        <div class="card">
+          <p class="overline">Back to growtick.in</p>
+          <p>Main site: services, contact and WhatsApp chat.</p>
+          <a href="https://growtick.in" class="btn btn--sm btn--ghost" target="_blank" rel="noopener">Open growtick.in →</a>
+        </div>
+        <div class="card">
+          <p class="overline">Got questions?</p>
+          <p>Chat on WhatsApp: +91 95130 59059</p>
+          <a href="https://wa.me/919513059059" class="btn btn--sm btn--ghost" target="_blank" rel="noopener">WhatsApp →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .hero { background: var(--grad); color: #fff; padding-block: clamp(3rem, 8vw, 6rem) 1rem; }
+  .hero a { color: #fff; }
+  .hero-content h1 { color: #fff; margin-bottom: 0.75rem; }
+  .batch-card { margin: 1rem 0; }
+  .batch__meta { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.95rem; color: var(--text); margin-bottom: 0.5rem; }
+  .batch__divider { color: var(--muted); }
+  .batch__fee { font-weight: 700; color: var(--accent-deco); }
+  .hero-art { display: none; }
+  @media (min-width: 768px) {
+    .hero-art { display: block; }
+  }
+  .mt { margin-top: 1.5rem; }
+</style>

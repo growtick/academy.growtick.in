@@ -1,0 +1,52 @@
+---
+const year = new Date().getFullYear();
+---
+<footer>
+  <div class="wrap ftr">
+    <div class="ftr-row">
+      <div class="ftr-brand">
+        <a class="logo" href="/" aria-label="Growtick Academy home">
+          <img class="logo-img logo-light" src="/brand/logo-wordmark-light.webp" alt="Growtick Academy" width="160" height="40" />
+          <img class="logo-img logo-dark" src="/brand/logo-wordmark-dark.webp" alt="Growtick Academy" width="160" height="40" />
+        </a>
+        <p class="ftr-tagline">A practical, career-ready skill academy by <a href="https://growtick.in" target="_blank" rel="noopener">Growtick</a>.</p>
+      </div>
+      <div class="ftr-links">
+        <a href="/courses">Courses</a>
+        <a href="/verify">Verify a certificate</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+      </div>
+      <div class="ftr-contact">
+        <div class="ftr-contact__item"><strong>Chat on WhatsApp</strong><br /><a href="https://wa.me/919513059059" target="_blank" rel="noopener">+91 95130 59059</a></div>
+        <div class="ftr-contact__item"><strong>Follow us</strong><br /><a href="https://instagram.com/growtick.in" target="_blank" rel="noopener">@growtick.in</a></div>
+      </div>
+    </div>
+    <p class="ftr-copy">&copy; {year} Growtick Academy. <a href="https://growtick.in" target="_blank" rel="noopener">growtick.in</a></p>
+  </div>
+</footer>
+
+<style>
+  .ftr { border-top: 1px solid var(--border); background: var(--surface); margin-top: auto; }
+  .ftr-row { display: grid; gap: 1.2rem; align-items: start; padding-block: 2rem 1rem; }
+  @media (min-width: 768px) { .ftr-row { grid-template-columns: 1.6fr 1fr 1fr; } }
+  .ftr-brand { max-width: 30rem; }
+  .logo { display: inline-flex; align-items: center; text-decoration: none; margin-bottom: 0.6rem; }
+  .logo-img { display: block; height: 1.35rem; width: auto; }
+  .logo-dark { display: none; }
+  [data-theme='dark'] .logo-light { display: none; }
+  [data-theme='dark'] .logo-dark { display: block; }
+  .ftr-tagline { color: var(--muted); font-size: 0.95rem; margin: 0 0 0.5rem; }
+  .ftr-tagline a { color: var(--brand-text); text-decoration: none; }
+  .ftr-tagline a:hover { text-decoration: underline; }
+  .ftr-links { display: flex; flex-direction: column; gap: 0.55rem; }
+  .ftr-links a { text-decoration: none; color: var(--text); font-size: 0.95rem; }
+  .ftr-links a:hover { color: var(--brand-text); }
+  .ftr-contact { display: flex; flex-direction: column; gap: 0.7rem; }
+  .ftr-contact__item { font-size: 0.95rem; color: var(--text); }
+  .ftr-contact__item strong { display: block; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 0.15rem; }
+  .ftr-contact__item a { color: var(--brand-text); text-decoration: none; }
+  .ftr-contact__item a:hover { text-decoration: underline; }
+  .ftr-copy { border-top: 1px solid var(--border); padding: 1rem 0; font-size: 0.85rem; color: var(--muted); text-align: center; }
+  .ftr-copy a { color: var(--brand-text); text-decoration: none; }
+</style>

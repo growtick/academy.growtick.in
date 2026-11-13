@@ -1,2 +1,31 @@
+# build output
+dist/
+# generated types
+.astro/
+
+# dependencies
+node_modules/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# environment variables
+.env
+.env.local
+.env.production
+
+# Cloudflare local dev state
+.wrangler/
+
+# macOS-specific files
+.DS_Store
+
+# jetbrains setting folder
+.idea/
+
+# Academy source files kept for reference (committed separately if needed)
 GST.html
 IMPLEMENTAION_PLAN_V1.md

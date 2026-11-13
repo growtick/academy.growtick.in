@@ -1,0 +1,18 @@
+# Cloudflare Worker config for academy.growtick.in.
+# Astro's @astrojs/cloudflare adapter merges its own config at build time;
+# this file is used for local `wrangler pages dev` and for deploying secrets.
+name = "growtick-academy"
+compatibility_date = "2026-11-13"
+
+[vars]
+SITE_URL = "http://localhost:4321"
+TURNSTILE_HOSTNAMES = "localhost,127.0.0.1"
+
+# Secrets are set in the Cloudflare dashboard or with:
+#   npx wrangler secret put NAME
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, TURNSTILE_SECRET_KEY, RESEND_API_KEY
+
+[observability]
+enabled = true
+logs = { enabled = true }
+traces = { enabled = true }
