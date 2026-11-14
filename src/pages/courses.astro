@@ -1,0 +1,122 @@
+---
+import Base from '../layouts/Base.astro';
+import { anonDb } from '../lib/supabase';
+
+const db = anonDb();
+const { data, error } = await db
+  .from('academy_courses')
+  .select('*, academy_batches(id, starts_at, ends_at, venue, capacity, fee, status)')
+  .eq('status', 'published')
+  .order('title');
+
+if (error) console.error('Failed to load published courses:', error);
+
+const courses = (data ?? []).map((course) => ({
+  ...course,
+  academy_batches: course.academy_batches ?? [],
+}));
+
+function deliveryLabel(d: string) {
+  return d === 'offline' ? 'Offline batch' : d === 'online' ? 'Online course' : 'Offline + online';
+}
+
+function batchStatusLabel(b: (typeof courses)[number]['academy_batches'][number]) {
+  if (b.status === 'open') return 'Open';
+  if (b.status === 'full') return 'Full';
+  return b.status ?? '—';
+}
+
+function formatWhen(b: (typeof courses)[number]['academy_batches'][number]) {
+  const starts = b.starts_at ? new Date(b.starts_at) : null;
+  const ends = b.ends_at ? new Date(b.ends_at) : null;
+  if (!starts) return 'Date TBA';
+  const opts: Intl.DateTimeFormatOptions = { weekday: 'short', month: 'short', day: 'numeric' };
+  const startStr = starts.toLocaleDateString('en-IN', opts);
+  if (!ends) return startStr;
+  const endStr = ends.toLocaleDateString('en-IN', opts);
+  return startStr + ' · ' + ends.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+}
+---
+<Base title="Courses — Growtick Academy" description="Browse and register for upcoming Growtick Academy batches.">
+  <section class="section page-head">
+    <div class="wrap">
+      <p class="overline">Browse courses</p>
+      <h1>Upcoming batches</h1>
+      <p class="lead">Pick a course, pick a batch, register offline. Pay on arrival at the venue.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      {error ? (
+        <div class="card" role="alert">
+          <p>Courses are temporarily unavailable. Please try again shortly.</p>
+        </div>
+      ) : courses.length === 0 ? (
+        <div class="card">
+          <p>No published courses right now. Check back soon.</p>
+        </div>
+      ) : (
+        <ul class="grid grid--3" role="list">
+          {courses.map((course) => (
+            <li>
+              <article class="card">
+                <div style="margin-bottom: 1rem;">
+                  {course.academy_batches.length > 0 ? (
+                    <>
+                      {course.academy_batches.map((b: any) => (
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            background: b.status === 'open' ? 'var(--lav)' : 'var(--surface-alt)',
+                            color: b.status === 'open' ? 'var(--purple-deep)' : 'var(--muted)',
+                            border: '1px solid var(--border)',
+                            borderRadius: '999px',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            padding: '0.25rem 0.65rem',
+                            marginBottom: '0.4rem',
+                            marginRight: '0.4rem',
+                          }}
+                        >
+                          {batchStatusLabel(b)}
+                        </span>
+                      ))}
+                    </>
+                  ) : (
+                    <span style="font-size:0.75rem; color:var(--muted); font-weight:700;">No batches</span>
+                  )}
+                </div>
+                <h3 style="font-size:1.1rem; margin-bottom:0.4rem;">{course.title}</h3>
+                {course.short_description && (
+                  <p style="font-size:0.95rem; color:var(--muted); margin-bottom:0.8rem;">{course.short_description}</p>
+                )}
+                <dl style="margin-bottom:0.8rem; font-size:0.9rem; color:var(--muted); display:grid; grid-template-columns: 7rem 1fr; gap:0.25rem 0.5rem;">
+                  <dt>Delivery</dt>
+                  <dd>{deliveryLabel(course.delivery ?? 'offline')}</dd>
+                  {course.academy_batches.length > 0 && (
+                    <>
+                      <dt>When</dt>
+                      <dd>{formatWhen(course.academy_batches[0])}</dd>
+                      <dt>Venue</dt>
+                      <dd>{course.academy_batches[0].venue ?? '—'}</dd>
+                      <dt>Fee</dt>
+                      <dd>₹{Number(course.academy_batches[0].fee ?? 0)}, pay on arrival</dd>
+                    </>
+                  )}
+                </dl>
+                <a
+                  href={`/courses/${course.slug}`}
+                  class="btn btn--sm"
+                  style="width: 100%;"
+                >
+                  View batches →
+                </a>
+              </article>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  </section>
+</Base>

@@ -1,0 +1,112 @@
+---
+import Base from '../layouts/Base.astro';
+import { serviceDb } from '../lib/supabase';
+
+const db = serviceDb();
+const code = (Astro.url.searchParams.get('code') ?? '').trim();
+
+let cert = null;
+let notFound = false;
+let unconfigured = false;
+
+if (code) {
+  if (!db) {
+    unconfigured = true;
+  } else {
+    const { data, error } = await db
+      .from('academy_certificates')
+      .select(`
+        serial,
+        verify_code,
+        issued_at,
+        revoked,
+        academy_enrollments (
+          name,
+          email,
+          course_id,
+          academy_courses (title, slug),
+          academy_batches (venue, starts_at, ends_at)
+        )
+      `)
+      .eq('verify_code', code)
+      .maybeSingle();
+
+    if (error || !data) {
+      notFound = true;
+    } else {
+      cert = data;
+    }
+  }
+}
+---
+<Base
+  title="Verify a certificate — Growtick Academy"
+  description="Check the authenticity of a Growtick Academy certificate by its verification code."
+>
+  <section class="section page-head">
+    <div class="wrap">
+      <p class="overline">Verify a certificate</p>
+      <h1>Certificate authenticity check</h1>
+      <p class="lead">Enter the verification code printed on your certificate.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      {unconfigured ? (
+        <div class="card">
+          <p>Certificate verification is not configured yet. Contact Growtick to verify a certificate.</p>
+        </div>
+      ) : (
+        <>
+          <form action="/verify" method="GET" style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:2rem; max-width:42rem;">
+            <label class="sr-only" for="verify-code">Verification code</label>
+            <input
+              id="verify-code"
+              name="code"
+              value={code}
+              placeholder="e.g. GT-GST-2026-0001"
+              required
+              style="flex:1; min-width:220px; min-height:44px; padding:0.65rem 0.8rem; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-alt); color:var(--text); font:inherit;"
+            />
+            <button type="submit" class="btn">Check code</button>
+          </form>
+
+          {cert ? (
+            <article class="card">
+              {!cert.revoked ? (
+                <>
+                  <p style="color:var(--purple-deep); font-weight:700; font-size:0.85rem; text-transform:uppercase; letter-spacing:0.14em; margin-bottom:0.5rem;">Valid certificate</p>
+                  <h2 style="font-size:1.35rem; margin:0 0 0.25rem;">
+                    {cert.academy_enrollments?.[0]?.academy_courses?.[0]?.title ?? 'Growtick Academy course'}
+                  </h2>
+                  <p style="color:var(--muted); margin-bottom:1rem;">Certificate of Appreciation · Growtick Academy</p>
+                  <dl style="display:grid; grid-template-columns: 7rem 1fr; gap:0.4rem 1rem; font-size:0.95rem; color:var(--muted); margin-bottom:1rem;">
+                    <dt>Issued to</dt><dd>{cert.academy_enrollments?.[0]?.name ?? '—'}</dd>
+                    <dt>Serial</dt><dd style="font-weight:700; letter-spacing:0.06em; color:var(--ink);">{cert.serial}</dd>
+                    <dt>Verification code</dt><dd>{cert.verify_code}</dd>
+                    <dt>Issued</dt><dd>{cert.issued_at ? new Date(cert.issued_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</dd>
+                  </dl>
+                  <p style="color:var(--muted); font-size:0.9rem;">Verify anytime at academy.growtick.in/verify. Need a copy? Contact us on WhatsApp: <a href="https://wa.me/919513059059">+91 95130 59059</a>.</p>
+                </>
+              ) : (
+                <>
+                  <p style="color:#be185d; font-weight:700;">This certificate has been revoked and is no longer valid.</p>
+                </>
+              )}
+            </article>
+          ) : code ? (
+            <article class="card">
+              <h2>Certificate not found</h2>
+              <p>No certificate matches verification code <strong>{code}</strong>. Check the code on your certificate and try again.</p>
+            </article>
+          ) : null}
+        </>
+      )}
+    </div>
+  </section>
+</Base>
+
+<style>
+  .page-head { padding-block: clamp(2rem, 6vw, 3.5rem) 1rem; }
+</style>

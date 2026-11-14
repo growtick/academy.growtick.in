@@ -1,0 +1,28 @@
+---
+import Base from '../../layouts/Base.astro';
+
+export const prerender = false;
+---
+<Base title="Admin dashboard — Growtick Academy" description="Admin dashboard for batch registrations, check-in and certificates." noindex={true}>
+  <section class="section page-head">
+    <div class="wrap">
+      <p class="overline">Admin dashboard</p>
+      <h1>Growtick Academy admin</h1>
+      <p class="lead">Manage the 15 Nov GST batch: registrations, check-in and certificates.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="card" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; margin-top:1rem;">
+        <a href="/admin/registrations" class="btn" style="text-align:center;">Batch registrations &amp; check-in</a>
+        <a href="/verify" class="btn btn--ghost" style="text-align:center;">Verify a certificate</a>
+        <a href="/courses/gst-compliance" class="btn btn--ghost" style="text-align:center;">View course page</a>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .page-head { padding-block: clamp(2rem, 6vw, 3.5rem) 1rem; }
+</style>

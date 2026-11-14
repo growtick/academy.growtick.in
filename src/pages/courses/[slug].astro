@@ -1,0 +1,257 @@
+---
+import Base from '../../layouts/Base.astro';
+import { anonDb } from '../../lib/supabase';
+
+const db = anonDb();
+const { slug } = Astro.params;
+
+const { data: course } = await db
+  .from('academy_courses')
+  .select('*, academy_batches(id, starts_at, ends_at, venue, capacity, fee, status, pay_on_spot)')
+  .eq('slug', slug)
+  .maybeSingle();
+
+if (!course) {
+  return new Response(null, { status: 404 });
+}
+
+const batches = (course.academy_batches ?? []).filter((b: any) => b.status === 'open');
+
+const openBatches = batches.length > 0;
+const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? '';
+
+function batchWhen(b: any) {
+  const starts = b.starts_at ? new Date(b.starts_at) : null;
+  const ends = b.ends_at ? new Date(b.ends_at) : null;
+  if (!starts) return 'Date TBA';
+  const startStr = starts.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
+  if (!ends) return startStr;
+  const timeStr = ends.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  return `${startStr} · ${timeStr}`;
+}
+
+function seatsLeft(b: any) {
+  if (b.capacity == null) return null;
+  return b.capacity;
+}
+---
+
+<Base
+  title={`${course.title} — Growtick Academy`}
+  description={course.short_description ?? `Register for ${course.title}.`}
+  noindex={!openBatches}
+>
+  <section class="section page-head">
+    <div class="wrap">
+      <p class="overline">{course.delivery?.replace(/^./, (c: string) => c.toUpperCase()) ?? 'Offline'} · Course</p>
+      <h1>{course.title}</h1>
+      {course.short_description && (
+        <p class="lead">{course.short_description}</p>
+      )}
+    </div>
+  </section>
+
+  {!openBatches ? (
+    <section class="section">
+      <div class="wrap">
+        <div class="card">
+          <p>No open batches for this course right now. Check back later.</p>
+        </div>
+      </div>
+    </section>
+  ) : (
+    <>
+      <section class="section">
+        <div class="wrap">
+          <h2>Choose a batch</h2>
+          <ul class="grid grid--3" role="list">
+            {batches.map((b: any, i: number) => (
+              <li>
+                <article class="card">
+                  <h3 style="font-size:1.05rem; margin-bottom:0.35rem;">{b.venue ?? 'Venue TBA'}</h3>
+                  <p style="font-size:0.9rem; color:var(--muted); margin-bottom:0.6rem;">{batchWhen(b)}</p>
+                  <dl style="font-size:0.85rem; color:var(--muted); margin-bottom:0.7rem; display:grid; grid-template-columns: 6rem 1fr; gap:0.2rem 0.5rem;">
+                    <dt>Fee</dt>
+                    <dd>₹{Number(b.fee ?? 0)}, pay on arrival</dd>
+                    <dd style="grid-column: 1 / -1; font-weight:700; color:var(--purple-deep);">Pay on spot</dd>
+                  </dl>
+                  <label class="btn" style="width:100%; justify-content:center;">
+                    <input type="radio" name="batch_id" value={b.id} required style="display:none;" checked={i === 0} />
+                    Select batch
+                  </label>
+                </article>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="wrap">
+          <h2>Register</h2>
+          <form id="register-form" novalidate>
+            <p style="color:var(--muted); font-size:0.9rem; margin-bottom:1rem;">
+              Fill in your details. You’ll get a registration code by email — bring it to the venue for check-in.
+            </p>
+
+            <div style="display:grid; gap:0.85rem;">
+              <div>
+                <label style="display:block; font-size:0.85rem; color:var(--muted); margin-bottom:0.3rem;">Full name</label>
+                <input type="text" name="name" required minlength="2" maxlength="80"
+                  style="width:100%; min-height:44px; padding:0.65rem 0.8rem; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-alt); color:var(--text); font:inherit;" />
+              </div>
+              <div>
+                <label style="display:block; font-size:0.85rem; color:var(--muted); margin-bottom:0.3rem;">Email</label>
+                <input type="email" name="email" required
+                  style="width:100%; min-height:44px; padding:0.65rem 0.8rem; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-alt); color:var(--text); font:inherit;" />
+              </div>
+              <div>
+                <label style="display:block; font-size:0.85rem; color:var(--muted); margin-bottom:0.3rem;">Mobile number</label>
+                <input type="tel" name="phone" required pattern="[6-9][0-9]{9}" placeholder="9876543210"
+                  style="width:100%; min-height:44px; padding:0.65rem 0.8rem; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-alt); color:var(--text); font:inherit;" />
+              </div>
+              <div style="display:flex; align-items:flex-start; gap:0.6rem;">
+                <input type="checkbox" name="consent" required id="consent" />
+                <label for="consent" style="font-size:0.85rem; color:var(--muted); margin-bottom:0;">
+                  I agree to the <a href="/terms" style="text-decoration:underline;">terms</a> and
+                  <a href="/privacy" style="text-decoration:underline;">privacy policy</a>.
+                </label>
+              </div>
+              <div id="turnstile-box" style="margin-top:0.5rem;">
+                <div id="turnstile-widget" data-sitekey={turnstileSiteKey}></div>
+                <input type="hidden" name="turnstile_token" id="turnstile-token" />
+              </div>
+              <div id="form-error" style="color:#be185d; font-size:0.85rem; margin-bottom:0.7rem; display:none;"></div>
+              <button type="submit" class="btn" style="width:100%;">Register for this batch</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </>
+  )}
+</Base>
+
+<style>
+  article.card.batch-selected {
+    outline: 3px solid var(--purple-deep);
+    outline-offset: 2px;
+    background: var(--lav);
+  }
+  label.btn.batch-selected {
+    background: var(--purple-deep);
+    color: #fff;
+  }
+</style>
+
+<script>
+  (function () {
+    var siteKey = document.getElementById('turnstile-widget')?.dataset?.sitekey ?? '';
+    const form = document.getElementById('register-form') as HTMLFormElement;
+    const errorBox = document.getElementById('form-error') as HTMLDivElement;
+    const tokenInput = document.getElementById('turnstile-token') as HTMLInputElement;
+    const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+
+    // Batch radios live outside the form; keep a visual selected state and
+    // guarantee one batch is always chosen so batch_id is never missing.
+    (function syncBatchSelection() {
+      const radios = document.querySelectorAll<HTMLInputElement>('input[name="batch_id"]');
+      const update = () => {
+        radios.forEach((r) => {
+          const card = r.closest('article.card');
+          const label = r.closest('label.btn');
+          if (card) card.classList.toggle('batch-selected', r.checked);
+          if (label) label.classList.toggle('batch-selected', r.checked);
+        });
+      };
+      if (radios.length && ![...radios].some((r) => r.checked)) {
+        (radios[0] as HTMLInputElement).checked = true;
+      }
+      update();
+      radios.forEach((r) => r.addEventListener('change', update));
+    })();
+
+    function showError(msg: string) {
+      errorBox.textContent = msg;
+      errorBox.style.display = msg ? 'block' : 'none';
+    }
+
+    function setSubmitting(isSubmitting: boolean) {
+      submitBtn.disabled = isSubmitting;
+      submitBtn.textContent = isSubmitting ? 'Registering…' : 'Register for this batch';
+    }
+
+    // Load Turnstile only when a site key is configured.
+    if (siteKey) {
+      var script = document.createElement('script');
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.onload = function () {
+        if ((window as any).turnstile) {
+          (window as any).turnstile.render('#turnstile-widget', {
+            sitekey: siteKey,
+            callback: function (token: string) {
+              tokenInput.value = token;
+              showError('');
+            },
+            'error-callback': function () {
+              tokenInput.value = '';
+              showError('Spam check failed. Please try again.');
+            },
+          });
+        }
+      };
+      document.head.appendChild(script);
+    }
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      showError('');
+      setSubmitting(true);
+
+      var formData = new FormData(form);
+      var payload = {
+        name: formData.get('name'),
+        email: formData.get('email'),
+        phone: formData.get('phone'),
+        batch_id: (document.querySelector('input[name="batch_id"]:checked') as HTMLInputElement | null)?.value || null,
+        consent: formData.get('consent') === 'true' || formData.get('consent') === 'on',
+        turnstile_token: tokenInput.value || '',
+      };
+
+      if (!payload.batch_id) {
+        showError('Please select a batch.');
+        setSubmitting(false);
+        return;
+      }
+
+      try {
+        var res = await fetch('/api/register', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        var data = await res.json();
+
+        if (res.ok && data.ok && data.reg_code) {
+          window.location.href = '/registered/' + encodeURIComponent(data.reg_code);
+        } else {
+          let msg = data.error || 'Registration failed. Please try again.';
+          if (data.details) {
+            const firstKey = Object.keys(data.details)[0];
+            const first = data.details[firstKey]?.[0];
+            msg = first ? firstKey + ': ' + first : msg;
+          }
+          showError(msg);
+          setSubmitting(false);
+          if (siteKey && (window as any).turnstile) {
+            (window as any).turnstile.reset();
+            tokenInput.value = '';
+          }
+        }
+      } catch (err) {
+        showError('Network error. Please try again.');
+        setSubmitting(false);
+      }
+    });
+  })();
+</script>

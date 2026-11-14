@@ -61,7 +61,7 @@ interface Props {}
     const btn = document.getElementById('theme-toggle');
     const root = document.documentElement;
     if (!btn) return;
-    const set = (t) => { root.dataset.theme = t; try { localStorage.setItem('theme', t); } catch (e) {} };
+    const set = (t: string) => { root.dataset.theme = t; try { localStorage.setItem('theme', t); } catch (e) {} };
     set(root.dataset.theme === 'dark' ? 'light' : 'dark');
     btn.addEventListener('click', () => set(root.dataset.theme === 'dark' ? 'light' : 'dark'));
   })();

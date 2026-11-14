@@ -1,0 +1,58 @@
+---
+import Base from '../layouts/Base.astro';
+
+const error = Astro.url.searchParams.get('error');
+---
+<Base title="Sign in — Growtick Academy" description="Sign in to your Growtick Academy account." noindex={true}>
+  <section class="section">
+    <div class="wrap" style="max-width:28rem;">
+      {error === 'not_configured' ? (
+        <div class="card">
+          <p>Sign-in isn’t configured yet. For the 15 Nov offline batch you don’t need an account — just <a href="/courses/gst-compliance">register for the batch</a> with your name, mobile and email.</p>
+        </div>
+      ) : null}
+      <p class="overline">Sign in</p>
+      <h1>Sign in to your academy account</h1>
+      <p>We’ll send a one-time code to your email — no password to remember.</p>
+      <form id="login-form" novalidate>
+        <p id="login-msg" style="color:var(--muted); font-size:0.9rem; margin-bottom:0.75rem;"></p>
+        <div style="display:grid; gap:0.85rem; margin-bottom:1rem;">
+          <label style="display:block; font-size:0.85rem; color:var(--muted); margin-bottom:0.3rem;">Email address</label>
+          <input type="email" name="email" required
+            style="width:100%; min-height:44px; padding:0.65rem 0.8rem; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-alt); color:var(--text); font:inherit;" />
+        </div>
+        <button type="submit" class="btn" style="width:100%;">Send sign-in code</button>
+      </form>
+      <p style="margin-top:1rem; font-size:0.9rem; color:var(--muted);">Offline registration needs no account — <a href="/courses/gst-compliance">register for the GST batch →</a></p>
+    </div>
+  </section>
+  <script>
+    (() => {
+      const form = document.getElementById('login-form') as HTMLFormElement;
+      const msg = document.getElementById('login-msg') as HTMLElement;
+      if (!form || !msg) return;
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(form);
+        const email = fd.get('email');
+        msg.textContent = 'Sending code…';
+        try {
+          const res = await fetch('/api/auth/otp', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ email }),
+          });
+          const data = await res.json();
+          if (res.ok && data.ok) {
+            msg.textContent = '';
+            form.innerHTML = '<p style="color:var(--purple-deep); font-weight:700;">Code sent</p><p>Check your inbox (and spam folder) for the sign-in link. It will bring you back here.</p>';
+          } else {
+            msg.textContent = data.error || 'Could not send the code. Try again.';
+          }
+        } catch {
+          msg.textContent = 'Network error. Try again.';
+        }
+      });
+    })();
+  </script>
+</Base>
