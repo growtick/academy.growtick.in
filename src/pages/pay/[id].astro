@@ -1,0 +1,99 @@
+---
+import Base from '../../layouts/Base.astro';
+import { serviceDb } from '../../lib/supabase';
+import { one } from '../../lib/http';
+import { getSettings, upiLink } from '../../lib/settings';
+
+export const prerender = false;
+
+const user = Astro.locals.user!;
+const db = serviceDb();
+const id = Astro.params.id ?? '';
+if (!db || !/^[0-9a-f-]{36}$/i.test(id)) return new Response('Not found', { status: 404 });
+
+const { data: enr } = await db
+  .from('academy_enrollments')
+  .select('id, user_id, name, phone, status, payment_status, amount, upi_ref, course_id, academy_courses (title, slug)')
+  .eq('id', id)
+  .maybeSingle();
+if (!enr || enr.user_id !== user.id) return new Response('Not found', { status: 404 });
+
+const course = one<any>(enr.academy_courses);
+if (enr.status === 'active' || enr.status === 'completed') return Astro.redirect(`/learn/${course?.slug ?? enr.course_id}`);
+
+const { data: profile } = await db.from('academy_profiles').select('full_name, phone').eq('id', user.id).maybeSingle();
+const s = await getSettings();
+const amount = Number(enr.amount ?? 0);
+const deeplink = upiLink(s, amount, `${course?.title ?? 'Course'} ${enr.id.slice(0, 8)}`);
+const submitted = !!enr.upi_ref && enr.payment_status === 'pending';
+const rejected = enr.payment_status === 'rejected';
+---
+<Base title={`Pay for ${course?.title ?? 'course'} — Growtick Academy`} description="Pay by UPI" noindex={true}>
+  <section class="section">
+    <div class="wrap pay">
+      <p class="overline">Enrol online</p>
+      <h1>{course?.title}</h1>
+
+      {submitted ? (
+        <div class="card stack-sm">
+          <span class="badge badge--warn">Awaiting confirmation</span>
+          <p>We've got your UPI reference <strong class="mono">{enr.upi_ref}</strong> for ₹{amount}. We'll check it and email you when the course is unlocked, usually within a few hours.</p>
+          <p class="small muted">Entered the wrong reference? Submit it again below.</p>
+        </div>
+      ) : rejected ? (
+        <div class="notice">We couldn't confirm your last UPI reference ({enr.upi_ref}). Please check it in your UPI app and submit it again, or message us on <a href="https://wa.me/919513059059">WhatsApp</a>.</div>
+      ) : null}
+
+      <div class="pay-grid">
+        <div class="card stack-sm">
+          <h2 class="h3">1. Pay ₹{amount} by UPI</h2>
+          {s.upi_qr_url ? (
+            <img class="qr" src={s.upi_qr_url} alt={`UPI QR code for ${s.upi_payee_name ?? 'Growtick'}`} width="240" height="240" />
+          ) : null}
+          {s.upi_id ? (
+            <p>UPI ID: <strong class="mono">{s.upi_id}</strong>{s.upi_payee_name ? <> ({s.upi_payee_name})</> : null}</p>
+          ) : (
+            <p class="notice">UPI details are being set up. Message us on <a href="https://wa.me/919513059059">WhatsApp</a> to pay.</p>
+          )}
+          {deeplink && <a class="btn btn--alt pay-app" href={deeplink}>Open UPI app</a>}
+          <p class="small muted">Scan with any UPI app (GPay, PhonePe, Paytm, BHIM) and pay exactly ₹{amount}.</p>
+        </div>
+
+        <form class="card stack-sm" data-api="/api/pay" data-redirect="/dashboard">
+          <h2 class="h3">2. Tell us the payment reference</h2>
+          <input type="hidden" name="enrollment_id" value={enr.id} />
+          <label class="field">
+            <span>UPI reference / UTR (12 digits)</span>
+            <input name="upi_ref" required inputmode="numeric" autocomplete="off" placeholder="e.g. 412345678901" maxlength="22" />
+          </label>
+          <label class="field">
+            <span>Full name (printed on your certificate)</span>
+            <input name="name" required minlength="2" maxlength="80" value={profile?.full_name ?? (enr.name?.includes('@') ? '' : enr.name)} autocomplete="name" />
+          </label>
+          <label class="field">
+            <span>Mobile number</span>
+            <input name="phone" required inputmode="numeric" value={profile?.phone ?? enr.phone ?? ''} placeholder="9876543210" autocomplete="tel-national" />
+          </label>
+          <button class="btn" type="submit">{submitted ? 'Update reference' : 'Submit for confirmation'}</button>
+          <output class="form-msg"></output>
+          <p class="small muted">Find the UTR under transaction details in your UPI app.</p>
+        </form>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<script>
+  import '../../scripts/api-forms';
+</script>
+
+<style>
+  .pay { display: grid; gap: 1.25rem; }
+  .pay h1 { font-size: clamp(1.8rem, 5vw, 2.6rem); }
+  .pay-grid { display: grid; gap: 1rem; }
+  @media (min-width: 820px) { .pay-grid { grid-template-columns: 1fr 1fr; align-items: start; } }
+  .h3 { font-size: 1.1rem; margin: 0; }
+  .qr { width: 240px; height: 240px; object-fit: contain; background: #fff; border-radius: 12px; padding: 8px; border: 1px solid var(--border); }
+  .pay-app { justify-self: start; }
+  @media (min-width: 820px) { .pay-app { display: none; } }
+</style>

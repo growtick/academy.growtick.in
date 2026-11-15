@@ -1,0 +1,58 @@
+---
+import Base from './Base.astro';
+
+interface Props {
+  title: string;
+  heading?: string;
+  lead?: string;
+}
+
+const { title, heading, lead } = Astro.props;
+const path = Astro.url.pathname;
+const links = [
+  ['/admin', 'Overview'],
+  ['/admin/registrations', 'Registrations & check-in'],
+  ['/admin/payments', 'UPI payments'],
+  ['/admin/courses', 'Courses'],
+  ['/admin/learners', 'Learners'],
+  ['/admin/emails', 'Email log'],
+  ['/admin/settings', 'Settings'],
+];
+const active = (href: string) => (href === '/admin' ? path === '/admin' : path === href || path.startsWith(href + '/'));
+---
+<Base title={`${title} · Admin · Growtick Academy`} description="Growtick Academy admin" noindex={true}>
+  <nav class="admin-nav" aria-label="Admin">
+    <div class="wrap admin-nav__inner">
+      {links.map(([href, label]) => (
+        <a href={href} aria-current={active(href) ? 'page' : undefined}>{label}</a>
+      ))}
+    </div>
+  </nav>
+  <section class="section admin-head">
+    <div class="wrap">
+      <p class="overline">Admin</p>
+      <h1>{heading ?? title}</h1>
+      {lead && <p class="lead">{lead}</p>}
+    </div>
+  </section>
+  <section class="admin-body">
+    <div class="wrap stack">
+      <slot />
+    </div>
+  </section>
+</Base>
+
+<script>
+  import '../scripts/api-forms';
+</script>
+
+<style>
+  .admin-nav { border-bottom: 1px solid var(--border); background: var(--surface); }
+  .admin-nav__inner { display: flex; gap: 0.25rem; overflow-x: auto; padding-block: 0.4rem; scrollbar-width: thin; }
+  .admin-nav a { flex: none; padding: 0.45rem 0.8rem; border-radius: 999px; text-decoration: none; font-weight: 600; font-size: 0.9rem; color: var(--text); }
+  .admin-nav a:hover { background: var(--surface-alt); }
+  .admin-nav a[aria-current='page'] { background: var(--btn); color: var(--btn-text); }
+  .admin-head { padding-block: clamp(1.5rem, 4vw, 2.5rem) 1rem; }
+  .admin-head h1 { font-size: clamp(1.75rem, 4vw, 2.5rem); }
+  .admin-body { padding-bottom: 4rem; }
+</style>

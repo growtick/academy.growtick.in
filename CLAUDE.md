@@ -18,18 +18,25 @@ Copy `.env.example` to `.env` and fill in Supabase + Resend + Turnstile values. 
 
 ## Structure
 
-- `supabase/migrations/0001_academy.sql` — schema (Phase 1). All tables prefixed `academy_`; RLS enabled everywhere.
+- `supabase/migrations/0001_academy.sql` — schema. All tables prefixed `academy_`; RLS enabled everywhere. `0008` Phase 1 fixes + grants, `0009` Phase 2 (column-level anon grants, buckets).
 - `supabase/seed.sql` — GST course + 15 Nov batch seed (manual apply).
 - `src/lib/supabase.ts` — `anonDb()` (public reads), `userDb(ctx)` (session), `serviceDb()` (server endpoints).
 - `src/middleware.ts` — loads session, guards `/admin`, `/dashboard`, `/learn`, `/pay`.
 - `src/pages/courses.astro` — catalogue (published courses + open batches).
 - `src/pages/courses/[slug].astro` — course detail + offline registration form (posts to `/api/register`).
 - `src/pages/api/register.ts` — Turnstile check → `academy_register_for_batch()` RPC → confirmation email via Resend.
-- `src/layouts/Base.astro` — site shell with Header/Footer, theme toggle from localStorage.
+- `src/layouts/Base.astro` — site shell with Header/Footer, theme toggle from localStorage. `Admin.astro` wraps it with the admin nav.
+- `src/lib/http.ts` — `json`, `one()/many()` (PostgREST embeds can be object OR array — always normalise), `requireAdmin`, `sessionUser`, IST `batchWhen`, `ensureProfile`, `safeNext`.
+- `src/lib/{email,certificates,learn,settings,csv}.ts` — Resend templates (+ logging), PDF certificates + online eligibility, curriculum/enrolment loaders, settings, CSV import/export.
+- `src/scripts/api-forms.ts` — `form[data-api]` / `button[data-api]` JSON posting used by admin + learner pages.
+- Admin: `/admin`, `/admin/registrations` (check-in, walk-in, import, bulk certificates), `/admin/payments`, `/admin/courses[/slug]` (batches + curriculum builder), `/admin/learners`, `/admin/emails`, `/admin/settings`. APIs: `/api/admin/{enrollments,courses,upload,settings,export}`.
+- Learner: `/login` (link + 6-digit code), `/dashboard`, `/learn/[slug]`, `/pay/[id]`, `/help`. APIs: `/api/{enroll,pay,profile}`, `/api/learn/{progress,quiz,file,join}`, `/api/auth/{otp,verify,signout}`.
+- Guides: `ADMIN_GUIDE.md` (for admins), `/help` page (for learners).
 - `src/styles/tokens.css` — growtick.in design tokens copied verbatim; `global.css` imports it.
 
 ## Known limitations
 
 - `supabase/seed.sql` must be applied separately after migrations (not pushed by `db push`). Seed the GST course/batch before launch.
 - `TURNSTILE_SECRET_KEY` empty → register endpoint skips Turnstile (dev only).
-- Online learning (Phase 2) not yet built.
+- Migrations 0008/0009 must be pushed for walk-ins, serials, quiz ordering and Phase 2 (see PROGRESS.md).
+- Dates are stored UTC; always format with `timeZone: 'Asia/Kolkata'` (use `batchWhen`). Admin datetime inputs are IST.

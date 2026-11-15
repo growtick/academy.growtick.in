@@ -1,257 +1,333 @@
 ---
 import Base from '../../layouts/Base.astro';
-import { anonDb } from '../../lib/supabase';
+import { anonDb, serviceDb } from '../../lib/supabase';
+import { batchWhen, batchWhere, many } from '../../lib/http';
 
 const db = anonDb();
 const { slug } = Astro.params;
 
 const { data: course } = await db
   .from('academy_courses')
-  .select('*, academy_batches(id, starts_at, ends_at, venue, capacity, fee, status, pay_on_spot)')
-  .eq('slug', slug)
+  .select(
+    `slug, title, subtitle, description, outcomes, highlights, cover_url, delivery, online_price, certificate_kind,
+     academy_batches (id, kind, starts_at, ends_at, venue, address, map_url, capacity, fee, pay_on_spot, status),
+     academy_modules (id, title, sort_order, academy_lessons (id, title, type, duration_min, is_preview, sort_order))`
+  )
+  .eq('slug', slug ?? '')
   .maybeSingle();
 
 if (!course) {
-  return new Response(null, { status: 404 });
+  return new Response('Course not found', { status: 404 });
 }
 
-const batches = (course.academy_batches ?? []).filter((b: any) => b.status === 'open');
+const now = Date.now();
+const offlineBatches = many<any>(course.academy_batches)
+  .filter((b) => b.status === 'open' && new Date(b.ends_at ?? b.starts_at).getTime() > now)
+  .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
 
-const openBatches = batches.length > 0;
+// seats left (service role: anon can't count enrolments)
+const sdb = serviceDb();
+const seats: Record<string, number | null> = {};
+if (sdb) {
+  for (const b of offlineBatches) {
+    if (!b.capacity) {
+      seats[b.id] = null;
+      continue;
+    }
+    const { count } = await sdb
+      .from('academy_enrollments')
+      .select('id', { head: true, count: 'exact' })
+      .eq('batch_id', b.id)
+      .neq('status', 'cancelled');
+    seats[b.id] = Math.max(0, b.capacity - (count ?? 0));
+  }
+}
+const bookable = offlineBatches.filter((b) => seats[b.id] !== 0);
+
+const modules = many<any>(course.academy_modules)
+  .sort((a, b) => a.sort_order - b.sort_order)
+  .map((m) => ({ ...m, lessons: many<any>(m.academy_lessons).sort((a, b) => a.sort_order - b.sort_order) }));
+const lessonCount = modules.reduce((n, m) => n + m.lessons.length, 0);
+const totalMin = modules.reduce((n, m) => n + m.lessons.reduce((k: number, l: any) => k + (l.duration_min ?? 0), 0), 0);
+
+const online = course.delivery === 'online' || course.delivery === 'both';
+const price = Number(course.online_price ?? 0);
+
+// learner's existing online enrolment
+const user = Astro.locals.user;
+let myOnline: any = null;
+if (online && user && sdb) {
+  const { data } = await sdb
+    .from('academy_enrollments')
+    .select('id, status, payment_status')
+    .eq('course_id', course.slug)
+    .eq('user_id', user.id)
+    .eq('mode', 'online')
+    .neq('status', 'cancelled')
+    .maybeSingle();
+  myOnline = data;
+}
+
+const outcomes: string[] = Array.isArray(course.outcomes) ? course.outcomes : [];
+const highlights: string[] = Array.isArray(course.highlights) ? course.highlights : [];
 const turnstileSiteKey = import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? '';
-
-function batchWhen(b: any) {
-  const starts = b.starts_at ? new Date(b.starts_at) : null;
-  const ends = b.ends_at ? new Date(b.ends_at) : null;
-  if (!starts) return 'Date TBA';
-  const startStr = starts.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
-  if (!ends) return startStr;
-  const timeStr = ends.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-  return `${startStr} · ${timeStr}`;
-}
-
-function seatsLeft(b: any) {
-  if (b.capacity == null) return null;
-  return b.capacity;
-}
+const typeLabel: Record<string, string> = { video: 'Video', reading: 'Reading', download: 'Download', quiz: 'Quiz', live: 'Live class' };
+const deliveryLabel = course.delivery === 'both' ? 'Offline + online' : course.delivery === 'online' ? 'Online' : 'Offline';
+const feeText = (b: any) => (Number(b.fee ?? 0) > 0 ? `₹${Number(b.fee)}${b.pay_on_spot ? ', pay on arrival' : ''}` : 'Free');
 ---
 
 <Base
   title={`${course.title} — Growtick Academy`}
-  description={course.short_description ?? `Register for ${course.title}.`}
-  noindex={!openBatches}
+  description={course.subtitle ?? `Register for ${course.title}.`}
+  ogImage={course.cover_url ?? undefined}
 >
   <section class="section page-head">
     <div class="wrap">
-      <p class="overline">{course.delivery?.replace(/^./, (c: string) => c.toUpperCase()) ?? 'Offline'} · Course</p>
+      <p class="overline">{deliveryLabel} course · {course.certificate_kind === 'completion' ? 'Certificate of Completion' : 'Certificate of Appreciation'}</p>
       <h1>{course.title}</h1>
-      {course.short_description && (
-        <p class="lead">{course.short_description}</p>
-      )}
+      {course.subtitle && <p class="lead">{course.subtitle}</p>}
     </div>
   </section>
 
-  {!openBatches ? (
-    <section class="section">
-      <div class="wrap">
-        <div class="card">
-          <p>No open batches for this course right now. Check back later.</p>
-        </div>
-      </div>
-    </section>
-  ) : (
-    <>
-      <section class="section">
-        <div class="wrap">
-          <h2>Choose a batch</h2>
-          <ul class="grid grid--3" role="list">
-            {batches.map((b: any, i: number) => (
-              <li>
-                <article class="card">
-                  <h3 style="font-size:1.05rem; margin-bottom:0.35rem;">{b.venue ?? 'Venue TBA'}</h3>
-                  <p style="font-size:0.9rem; color:var(--muted); margin-bottom:0.6rem;">{batchWhen(b)}</p>
-                  <dl style="font-size:0.85rem; color:var(--muted); margin-bottom:0.7rem; display:grid; grid-template-columns: 6rem 1fr; gap:0.2rem 0.5rem;">
-                    <dt>Fee</dt>
-                    <dd>₹{Number(b.fee ?? 0)}, pay on arrival</dd>
-                    <dd style="grid-column: 1 / -1; font-weight:700; color:var(--purple-deep);">Pay on spot</dd>
-                  </dl>
-                  <label class="btn" style="width:100%; justify-content:center;">
-                    <input type="radio" name="batch_id" value={b.id} required style="display:none;" checked={i === 0} />
-                    Select batch
-                  </label>
-                </article>
-              </li>
+  <section class="section">
+    <div class="wrap course-grid">
+      <div class="stack">
+        {course.description && <p>{course.description}</p>}
+
+        {outcomes.length > 0 && (
+          <div class="card">
+            <h2 class="h3">What you'll learn</h2>
+            <ul class="ticks">{outcomes.map((o) => <li>{o}</li>)}</ul>
+          </div>
+        )}
+
+        {highlights.length > 0 && (
+          <ul class="chips" role="list">{highlights.map((h) => <li class="badge">{h}</li>)}</ul>
+        )}
+
+        {modules.length > 0 && (
+          <div class="stack-sm">
+            <h2 class="h3">Curriculum</h2>
+            <p class="small muted">{modules.length} module(s) · {lessonCount} lesson(s){totalMin > 0 ? ` · ${Math.round(totalMin / 6) / 10} h` : ''}</p>
+            {modules.map((m, i) => (
+              <details class="card" open={i === 0}>
+                <summary>{m.title} <span class="small muted">({m.lessons.length})</span></summary>
+                <ul class="lessons" role="list">
+                  {m.lessons.map((l: any) => (
+                    <li>
+                      <span>{l.title}</span>
+                      <span class="small muted">
+                        {typeLabel[l.type] ?? l.type}{l.duration_min ? ` · ${l.duration_min} min` : ''}
+                        {l.is_preview && <a href={`/learn/${course.slug}?lesson=${l.id}`}> · Preview</a>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
             ))}
-          </ul>
-        </div>
-      </section>
+          </div>
+        )}
 
-      <section class="section">
-        <div class="wrap">
-          <h2>Register</h2>
-          <form id="register-form" novalidate>
-            <p style="color:var(--muted); font-size:0.9rem; margin-bottom:1rem;">
-              Fill in your details. You’ll get a registration code by email — bring it to the venue for check-in.
-            </p>
+        {course.cover_url && (
+          <p><a href={`/courses/${course.slug}/poster`}><img class="cover" src={course.cover_url} alt={`${course.title} poster`} loading="lazy" /></a></p>
+        )}
+      </div>
 
-            <div style="display:grid; gap:0.85rem;">
-              <div>
-                <label style="display:block; font-size:0.85rem; color:var(--muted); margin-bottom:0.3rem;">Full name</label>
-                <input type="text" name="name" required minlength="2" maxlength="80"
-                  style="width:100%; min-height:44px; padding:0.65rem 0.8rem; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-alt); color:var(--text); font:inherit;" />
-              </div>
-              <div>
-                <label style="display:block; font-size:0.85rem; color:var(--muted); margin-bottom:0.3rem;">Email</label>
-                <input type="email" name="email" required
-                  style="width:100%; min-height:44px; padding:0.65rem 0.8rem; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-alt); color:var(--text); font:inherit;" />
-              </div>
-              <div>
-                <label style="display:block; font-size:0.85rem; color:var(--muted); margin-bottom:0.3rem;">Mobile number</label>
-                <input type="tel" name="phone" required pattern="[6-9][0-9]{9}" placeholder="9876543210"
-                  style="width:100%; min-height:44px; padding:0.65rem 0.8rem; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-alt); color:var(--text); font:inherit;" />
-              </div>
-              <div style="display:flex; align-items:flex-start; gap:0.6rem;">
-                <input type="checkbox" name="consent" required id="consent" />
-                <label for="consent" style="font-size:0.85rem; color:var(--muted); margin-bottom:0;">
-                  I agree to the <a href="/terms" style="text-decoration:underline;">terms</a> and
-                  <a href="/privacy" style="text-decoration:underline;">privacy policy</a>.
+      <aside class="stack enrol">
+        {online && (
+          <div class="card stack-sm">
+            <p class="overline">Learn online</p>
+            <p class="price">{price > 0 ? `₹${price}` : 'Free'}</p>
+            <p class="small muted">Recorded lessons, notes, quizzes{modules.some((m) => m.lessons.some((l: any) => l.type === 'live')) ? ', live classes' : ''} and a certificate when you finish.{price > 0 ? ' Pay by UPI.' : ''}</p>
+            {myOnline ? (
+              myOnline.status === 'pending_payment' ? (
+                <a class="btn" href={`/pay/${myOnline.id}`}>{myOnline.payment_status === 'rejected' ? 'Resubmit payment' : 'Complete payment'}</a>
+              ) : (
+                <a class="btn" href={`/learn/${course.slug}`}>Continue learning →</a>
+              )
+            ) : user ? (
+              <form data-enrol={course.slug}>
+                <button class="btn" type="submit" style="width:100%;">Enrol online</button>
+                <p class="form-msg" data-kind="error"></p>
+              </form>
+            ) : (
+              <a class="btn" href={`/login?next=${encodeURIComponent(`/courses/${course.slug}`)}`}>Sign in to enrol</a>
+            )}
+          </div>
+        )}
+
+        {offlineBatches.length > 0 && (
+          <div class="card stack-sm">
+            <p class="overline">Attend offline</p>
+            <fieldset class="batches">
+              <legend class="sr-only">Choose a batch</legend>
+              {offlineBatches.map((b, i) => (
+                <label class="batch" data-full={seats[b.id] === 0 ? '' : undefined}>
+                  <input type="radio" name="batch_id" value={b.id} checked={b.id === bookable[0]?.id} disabled={seats[b.id] === 0} />
+                  <span class="stack-sm">
+                    <strong>{batchWhen(b)}</strong>
+                    <span class="small muted">{batchWhere(b)}{b.map_url && b.kind !== 'live' ? <> · <a href={b.map_url} target="_blank" rel="noopener">Map</a></> : null}</span>
+                    <span class="small">
+                      {feeText(b)}
+                      {seats[b.id] === 0 ? <span class="badge badge--bad">Full</span> : seats[b.id] != null && seats[b.id]! <= 15 ? <span class="badge badge--warn">{seats[b.id]} seats left</span> : null}
+                    </span>
+                  </span>
                 </label>
-              </div>
-              <div id="turnstile-box" style="margin-top:0.5rem;">
+              ))}
+            </fieldset>
+
+            {bookable.length > 0 ? (
+              <form id="register-form" class="stack-sm" novalidate>
+                <label class="field"><span>Full name</span><input type="text" name="name" required minlength="2" maxlength="80" autocomplete="name" /></label>
+                <label class="field"><span>Email</span><input type="email" name="email" required autocomplete="email" /></label>
+                <label class="field"><span>Mobile number</span><input type="tel" name="phone" required pattern="[6-9][0-9]{9}" inputmode="numeric" placeholder="9876543210" autocomplete="tel-national" /></label>
+                <label class="check small">
+                  <input type="checkbox" name="consent" required />
+                  <span>I agree to the <a href="/terms">terms</a> and <a href="/privacy">privacy policy</a>.</span>
+                </label>
                 <div id="turnstile-widget" data-sitekey={turnstileSiteKey}></div>
                 <input type="hidden" name="turnstile_token" id="turnstile-token" />
-              </div>
-              <div id="form-error" style="color:#be185d; font-size:0.85rem; margin-bottom:0.7rem; display:none;"></div>
-              <button type="submit" class="btn" style="width:100%;">Register for this batch</button>
-            </div>
-          </form>
-        </div>
-      </section>
-    </>
-  )}
+                <p id="form-error" class="form-msg" data-kind="error" role="alert"></p>
+                <button type="submit" class="btn">Register for this batch</button>
+                <p class="small muted">No account needed. You'll get a registration code by email.</p>
+              </form>
+            ) : (
+              <p class="notice">All batches are full. Message us on <a href="https://wa.me/919513059059">WhatsApp</a> to join the waiting list.</p>
+            )}
+          </div>
+        )}
+
+        {!online && offlineBatches.length === 0 && (
+          <div class="card"><p>No open batches right now. Follow <a href="https://instagram.com/growtick.in">@growtick.in</a> for the next one.</p></div>
+        )}
+      </aside>
+    </div>
+  </section>
 </Base>
 
 <style>
-  article.card.batch-selected {
-    outline: 3px solid var(--purple-deep);
-    outline-offset: 2px;
-    background: var(--lav);
+  .course-grid { display: grid; gap: 2rem; }
+  @media (min-width: 900px) {
+    .course-grid { grid-template-columns: minmax(0, 1fr) 24rem; align-items: start; }
+    .enrol { position: sticky; top: 5rem; }
   }
-  label.btn.batch-selected {
-    background: var(--purple-deep);
-    color: #fff;
-  }
+  .h3 { font-size: 1.2rem; margin-bottom: 0.6rem; }
+  .ticks { padding-left: 1.2rem; display: grid; gap: 0.35rem; }
+  .chips { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .lessons { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.5rem; }
+  .lessons li { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 0.5rem; }
+  .cover { max-width: 100%; height: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+  .price { font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; color: var(--heading); margin: 0; }
+  .batches { border: 0; padding: 0; margin: 0; display: grid; gap: 0.5rem; }
+  .batch { display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.75rem; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-alt); cursor: pointer; }
+  .batch:has(input:checked) { outline: 2px solid var(--brand); }
+  .batch[data-full] { opacity: 0.6; cursor: not-allowed; }
+  .batch input { margin-top: 0.3rem; }
 </style>
 
 <script>
-  (function () {
-    var siteKey = document.getElementById('turnstile-widget')?.dataset?.sitekey ?? '';
-    const form = document.getElementById('register-form') as HTMLFormElement;
-    const errorBox = document.getElementById('form-error') as HTMLDivElement;
+  // ---- offline registration ------------------------------------------------
+  const form = document.getElementById('register-form') as HTMLFormElement | null;
+  if (form) {
+    const errorBox = document.getElementById('form-error') as HTMLElement;
     const tokenInput = document.getElementById('turnstile-token') as HTMLInputElement;
     const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+    const siteKey = document.getElementById('turnstile-widget')?.dataset.sitekey ?? '';
+    const w = window as any;
 
-    // Batch radios live outside the form; keep a visual selected state and
-    // guarantee one batch is always chosen so batch_id is never missing.
-    (function syncBatchSelection() {
-      const radios = document.querySelectorAll<HTMLInputElement>('input[name="batch_id"]');
-      const update = () => {
-        radios.forEach((r) => {
-          const card = r.closest('article.card');
-          const label = r.closest('label.btn');
-          if (card) card.classList.toggle('batch-selected', r.checked);
-          if (label) label.classList.toggle('batch-selected', r.checked);
-        });
-      };
-      if (radios.length && ![...radios].some((r) => r.checked)) {
-        (radios[0] as HTMLInputElement).checked = true;
-      }
-      update();
-      radios.forEach((r) => r.addEventListener('change', update));
-    })();
+    const showError = (html: string) => {
+      errorBox.innerHTML = html;
+    };
+    const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+    const busy = (on: boolean) => {
+      submitBtn.disabled = on;
+      submitBtn.textContent = on ? 'Registering…' : 'Register for this batch';
+    };
 
-    function showError(msg: string) {
-      errorBox.textContent = msg;
-      errorBox.style.display = msg ? 'block' : 'none';
-    }
-
-    function setSubmitting(isSubmitting: boolean) {
-      submitBtn.disabled = isSubmitting;
-      submitBtn.textContent = isSubmitting ? 'Registering…' : 'Register for this batch';
-    }
-
-    // Load Turnstile only when a site key is configured.
     if (siteKey) {
-      var script = document.createElement('script');
-      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-      script.async = true;
-      script.onload = function () {
-        if ((window as any).turnstile) {
-          (window as any).turnstile.render('#turnstile-widget', {
-            sitekey: siteKey,
-            callback: function (token: string) {
-              tokenInput.value = token;
-              showError('');
-            },
-            'error-callback': function () {
-              tokenInput.value = '';
-              showError('Spam check failed. Please try again.');
-            },
-          });
-        }
-      };
-      document.head.appendChild(script);
+      const s = document.createElement('script');
+      s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      s.async = true;
+      s.onload = () =>
+        w.turnstile?.render('#turnstile-widget', {
+          sitekey: siteKey,
+          callback: (t: string) => {
+            tokenInput.value = t;
+            showError('');
+          },
+          'error-callback': () => {
+            tokenInput.value = '';
+            showError('Spam check failed. Please refresh and try again.');
+          },
+        });
+      document.head.appendChild(s);
     }
 
-    form.addEventListener('submit', async function (e) {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
       showError('');
-      setSubmitting(true);
-
-      var formData = new FormData(form);
-      var payload = {
-        name: formData.get('name'),
-        email: formData.get('email'),
-        phone: formData.get('phone'),
-        batch_id: (document.querySelector('input[name="batch_id"]:checked') as HTMLInputElement | null)?.value || null,
-        consent: formData.get('consent') === 'true' || formData.get('consent') === 'on',
-        turnstile_token: tokenInput.value || '',
-      };
-
-      if (!payload.batch_id) {
-        showError('Please select a batch.');
-        setSubmitting(false);
-        return;
-      }
-
+      const fd = new FormData(form);
+      const batch = document.querySelector<HTMLInputElement>('input[name="batch_id"]:checked')?.value;
+      if (!batch) return showError('Please choose a batch.');
+      if (!fd.get('consent')) return showError('Please accept the terms to register.');
+      if (siteKey && !tokenInput.value) return showError('Please wait for the spam check to finish.');
+      busy(true);
       try {
-        var res = await fetch('/api/register', {
+        const res = await fetch('/api/register', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            name: fd.get('name'),
+            email: fd.get('email'),
+            phone: String(fd.get('phone') ?? '').replace(/\D/g, '').slice(-10),
+            batch_id: batch,
+            consent: true,
+            turnstile_token: tokenInput.value,
+          }),
         });
-        var data = await res.json();
-
+        const data = await res.json();
         if (res.ok && data.ok && data.reg_code) {
-          window.location.href = '/registered/' + encodeURIComponent(data.reg_code);
-        } else {
-          let msg = data.error || 'Registration failed. Please try again.';
-          if (data.details) {
-            const firstKey = Object.keys(data.details)[0];
-            const first = data.details[firstKey]?.[0];
-            msg = first ? firstKey + ': ' + first : msg;
-          }
-          showError(msg);
-          setSubmitting(false);
-          if (siteKey && (window as any).turnstile) {
-            (window as any).turnstile.reset();
-            tokenInput.value = '';
-          }
+          location.href = '/registered/' + encodeURIComponent(data.reg_code);
+          return;
         }
-      } catch (err) {
+        let msg = esc(data.error || 'Registration failed. Please try again.');
+        if (data.reg_code) msg += ` <a href="/registered/${encodeURIComponent(data.reg_code)}">View your registration</a>`;
+        showError(msg);
+        if (siteKey && w.turnstile) {
+          w.turnstile.reset();
+          tokenInput.value = '';
+        }
+      } catch {
         showError('Network error. Please try again.');
-        setSubmitting(false);
       }
+      busy(false);
     });
-  })();
+  }
+
+  // ---- online enrolment ------------------------------------------------------
+  document.querySelectorAll<HTMLFormElement>('form[data-enrol]').forEach((f) => {
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = f.querySelector('button')!;
+      const msg = f.querySelector<HTMLElement>('.form-msg')!;
+      btn.disabled = true;
+      msg.textContent = '';
+      try {
+        const res = await fetch('/api/enroll', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ course: f.dataset.enrol }),
+        });
+        const data = await res.json();
+        if (data.redirect) {
+          location.href = data.redirect;
+          return;
+        }
+        msg.textContent = data.error || 'Could not enrol. Try again.';
+      } catch {
+        msg.textContent = 'Network error. Try again.';
+      }
+      btn.disabled = false;
+    });
+  });
 </script>

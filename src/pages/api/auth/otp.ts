@@ -1,49 +1,38 @@
 import type { APIRoute } from 'astro';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from 'astro:env/server';
+import { z } from 'zod';
+import { userDb } from '../../../lib/supabase';
+import { json, readJson, safeNext } from '../../../lib/http';
 
 export const prerender = false;
 
-export const POST: APIRoute = async ({ request, url }) => {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    return new Response(JSON.stringify({ error: 'Sign-in is not configured yet' }), {
-      status: 503,
-      headers: { 'content-type': 'application/json' },
-    });
+const schema = z.object({
+  email: z.string().trim().toLowerCase().pipe(z.string().email()),
+  next: z.string().optional().nullable(),
+});
+
+// Sends a sign-in email. Uses the cookie-bound (PKCE) client so the code
+// verifier is stored in this browser and /auth/callback?code=… can complete;
+// the same email can carry a 6-digit code ({{ .Token }}) for other devices.
+export const POST: APIRoute = async ({ request, cookies, url }) => {
+  if (!import.meta.env.PUBLIC_SUPABASE_URL || !import.meta.env.PUBLIC_SUPABASE_ANON_KEY) {
+    return json({ error: 'Sign-in is not configured yet' }, 503);
   }
+  const parsed = schema.safeParse(await readJson(request));
+  if (!parsed.success) return json({ error: 'Enter a valid email address' }, 400);
+  const { email } = parsed.data;
+  const next = safeNext(parsed.data.next);
 
-  let body: { email?: string };
-  try {
-    body = await request.json();
-  } catch {
-    return new Response(JSON.stringify({ error: 'Invalid request body' }), {
-      status: 400,
-      headers: { 'content-type': 'application/json' },
-    });
-  }
-
-  const email = String(body.email ?? '').trim().toLowerCase();
-  if (!email || !email.includes('@')) {
-    return new Response(JSON.stringify({ error: 'Enter a valid email address' }), {
-      status: 400,
-      headers: { 'content-type': 'application/json' },
-    });
-  }
-
-  const supabase = createSupabaseClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  const { error } = await (supabase.auth as any).signInWithOtp({
+  const supabase = userDb({ request, cookies });
+  const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: { redirectTo: `${url.origin}/auth/callback` },
+    options: {
+      emailRedirectTo: `${url.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+      shouldCreateUser: true,
+    },
   });
   if (error) {
-    return new Response(JSON.stringify({ error: String(error?.message ?? error) }), {
-      status: 500,
-      headers: { 'content-type': 'application/json' },
-    });
+    const status = error.status === 429 ? 429 : 500;
+    return json({ error: status === 429 ? 'Too many attempts. Wait a minute and try again.' : error.message }, status);
   }
-
-  return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } });
+  return json({ ok: true });
 };

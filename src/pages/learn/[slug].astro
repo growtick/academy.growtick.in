@@ -1,0 +1,318 @@
+---
+import Base from '../../layouts/Base.astro';
+import { serviceDb } from '../../lib/supabase';
+import { batchWhen, one } from '../../lib/http';
+import { loadCurriculum, onlineEnrollment, hasAccess, learnerState, youtubeId, type Lesson } from '../../lib/learn';
+import { onlineEligibility, maybeIssueOnlineCertificate, certificatePublicUrl } from '../../lib/certificates';
+
+export const prerender = false;
+
+const user = Astro.locals.user!;
+const isAdmin = Astro.locals.isAdmin;
+const slug = Astro.params.slug ?? '';
+const db = serviceDb();
+const cur = await loadCurriculum(slug);
+if (!db || !cur || (cur.course.status !== 'published' && !isAdmin)) return new Response('Course not found', { status: 404 });
+const { course, modules, lessons } = cur;
+
+const enr = await onlineEnrollment(slug, user.id);
+const access = hasAccess(enr) || isAdmin;
+if (enr?.status === 'pending_payment' && !isAdmin) {
+  const anyPreview = lessons.some((l) => l.is_preview);
+  if (!anyPreview) return Astro.redirect(`/pay/${enr.id}`);
+}
+
+const state = enr ? await learnerState(enr.id) : { done: new Set<string>(), passed: new Set<string>(), best: new Map<string, number>() };
+const isDone = (l: Lesson) => (l.type === 'quiz' ? state.passed.has(l.id) : l.type === 'live' ? !!enr?.attended_at || state.done.has(l.id) : state.done.has(l.id));
+const canOpen = (l: Lesson) => access || l.is_preview;
+
+const wanted = Astro.url.searchParams.get('lesson');
+const lesson: Lesson | undefined =
+  lessons.find((l) => l.id === wanted && canOpen(l)) ??
+  lessons.find((l) => canOpen(l) && !isDone(l)) ??
+  lessons.find((l) => canOpen(l));
+const idx = lesson ? lessons.findIndex((l) => l.id === lesson.id) : -1;
+const prev = lessons.slice(0, Math.max(idx, 0)).reverse().find(canOpen);
+const next = idx >= 0 ? lessons.slice(idx + 1).find(canOpen) : undefined;
+
+// certificate + eligibility (auto-issue if requirements were met elsewhere, e.g. live attendance)
+let cert: any = null;
+let elig: Awaited<ReturnType<typeof onlineEligibility>> | null = null;
+if (enr && hasAccess(enr)) {
+  const { data } = await db.from('academy_certificates').select('serial, verify_code, pdf_path, revoked').eq('enrollment_id', enr.id).maybeSingle();
+  cert = data;
+  elig = await onlineEligibility(enr.id);
+  if (!cert && elig.eligible) {
+    try {
+      const r = await maybeIssueOnlineCertificate(enr.id);
+      if (r) cert = { serial: r.serial, verify_code: r.verify_code, pdf_path: r.pdf_path, revoked: false };
+    } catch (err) {
+      console.error('auto certificate failed', err);
+    }
+  }
+}
+const required = lessons.filter((l) => l.required);
+const pct = required.length ? Math.round((required.filter(isDone).length / required.length) * 100) : 0;
+
+// quiz questions (never the answers)
+let questions: { id: string; prompt: string; options: string[] }[] = [];
+if (lesson?.type === 'quiz') {
+  const { data } = await db.from('academy_quiz_questions').select('id, prompt, options').eq('lesson_id', lesson.id).order('sort_order').order('id');
+  questions = (data ?? []).map((q: any) => ({ id: q.id, prompt: q.prompt, options: Array.isArray(q.options) ? q.options : [] }));
+}
+
+// live classes for this course
+let live: any[] = [];
+if (lesson?.type === 'live') {
+  const { data } = await db
+    .from('academy_batches')
+    .select('id, starts_at, ends_at, status, meeting_url')
+    .eq('course_id', slug)
+    .eq('kind', 'live')
+    .neq('status', 'closed')
+    .order('starts_at');
+  const now = Date.now();
+  live = (data ?? [])
+    .filter((b: any) => new Date(b.ends_at ?? b.starts_at).getTime() > now - 3600_000)
+    .map((b: any) => ({
+      id: b.id,
+      when: batchWhen(b),
+      open: now >= new Date(b.starts_at).getTime() - 15 * 60_000 && now <= new Date(b.ends_at ?? b.starts_at).getTime(),
+      hasLink: !!b.meeting_url,
+    }));
+}
+
+const yt = lesson?.type === 'video' ? youtubeId(lesson.video_url) : null;
+const paragraphs = (lesson?.body ?? '').split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+const typeIcon: Record<string, string> = { video: '▶', reading: '≡', download: '↓', quiz: '?', live: '●' };
+const bestScore = lesson ? state.best.get(lesson.id) : undefined;
+---
+<Base title={`${lesson?.title ?? course.title} · ${course.title}`} description={course.subtitle ?? course.title} noindex={true}>
+  <section class="section learn-head">
+    <div class="wrap row row--between">
+      <div>
+        <p class="overline"><a href="/dashboard">My learning</a> / {course.title}</p>
+        {access && required.length > 0 && (
+          <div class="row small"><div class="progress" style="width:12rem;"><i style={`width:${pct}%`}></i></div><span>{pct}% complete</span></div>
+        )}
+      </div>
+      {!access && (
+        enr?.status === 'pending_payment'
+          ? <a class="btn btn--sm" href={`/pay/${enr.id}`}>Complete payment to unlock</a>
+          : <a class="btn btn--sm" href={`/courses/${slug}`}>Enrol to unlock all lessons</a>
+      )}
+    </div>
+  </section>
+
+  <section class="learn">
+    <div class="wrap learn-grid">
+      <nav class="card curriculum" aria-label="Course curriculum">
+        {modules.map((m) => (
+          <div class="mod">
+            <p class="mod__title">{m.title}</p>
+            <ol role="list">
+              {m.lessons.map((l) => (
+                <li>
+                  {canOpen(l) ? (
+                    <a href={`?lesson=${l.id}`} aria-current={l.id === lesson?.id ? 'page' : undefined}>
+                      <span class="tick" data-done={isDone(l) ? '' : undefined}>{isDone(l) ? '✓' : typeIcon[l.type]}</span>
+                      <span>{l.title}{!l.required && <span class="small muted"> (optional)</span>}</span>
+                    </a>
+                  ) : (
+                    <span class="locked"><span class="tick">🔒</span><span>{l.title}</span></span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </div>
+        ))}
+        {modules.length === 0 && <p class="muted small">Lessons are being added. Check back soon.</p>}
+      </nav>
+
+      <article class="stack lesson">
+        {cert && !cert.revoked && (
+          <div class="card cert-banner row row--between">
+            <span><strong>🎓 Certificate issued</strong> <span class="mono small">{cert.serial}</span></span>
+            <span class="row">
+              {certificatePublicUrl(cert.pdf_path) && <a class="btn btn--sm" href={certificatePublicUrl(cert.pdf_path)} target="_blank" rel="noopener">Download PDF</a>}
+              <a class="btn btn--ghost btn--sm" href={`/verify?code=${encodeURIComponent(cert.verify_code)}`}>Verify</a>
+            </span>
+          </div>
+        )}
+
+        {!lesson ? (
+          <div class="card"><p>No lessons available yet.</p></div>
+        ) : (
+          <>
+            <header>
+              <p class="overline">{lesson.type === 'live' ? 'Live class' : lesson.type}{lesson.duration_min ? ` · ${lesson.duration_min} min` : ''}{lesson.is_preview && !access ? ' · free preview' : ''}</p>
+              <h1 class="lesson__title">{lesson.title}</h1>
+            </header>
+
+            {lesson.type === 'video' && (
+              yt ? (
+                <div class="video">
+                  <iframe
+                    src={`https://www.youtube-nocookie.com/embed/${yt}?rel=0&modestbranding=1`}
+                    title={lesson.title}
+                    loading="lazy"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowfullscreen
+                    referrerpolicy="strict-origin-when-cross-origin"
+                  ></iframe>
+                </div>
+              ) : (
+                <p class="notice">The video for this lesson isn't available yet.</p>
+              )
+            )}
+
+            {paragraphs.length > 0 && <div class="prose body">{paragraphs.map((p) => <p>{p}</p>)}</div>}
+
+            {lesson.type === 'download' && (
+              lesson.file_path
+                ? <p><a class="btn" href={`/api/learn/file?lesson=${lesson.id}`}>Download {lesson.file_path.split('/').pop()}</a></p>
+                : <p class="notice">The file for this lesson hasn't been uploaded yet.</p>
+            )}
+            {lesson.type !== 'download' && lesson.file_path && (
+              <p><a class="btn btn--ghost btn--sm" href={`/api/learn/file?lesson=${lesson.id}`}>Download notes: {lesson.file_path.split('/').pop()}</a></p>
+            )}
+
+            {lesson.type === 'live' && (
+              <div class="stack-sm">
+                {live.length === 0 ? (
+                  <p class="notice">The next live class hasn't been scheduled yet. We'll email you when it is.</p>
+                ) : (
+                  live.map((b) => (
+                    <div class="card row row--between">
+                      <span>{b.when}</span>
+                      {access ? (
+                        b.open ? (
+                          <button class="btn btn--sm" data-api="/api/learn/join" data-body={JSON.stringify({ batch_id: b.id })}>Join live class</button>
+                        ) : (
+                          <span class="small muted">Join link opens 15 min before start</span>
+                        )
+                      ) : null}
+                    </div>
+                  ))
+                )}
+                {enr?.attended_at && <p class="badge badge--ok">Attendance recorded</p>}
+              </div>
+            )}
+
+            {lesson.type === 'quiz' && (
+              questions.length === 0 ? (
+                <p class="notice">Questions for this quiz are being prepared.</p>
+              ) : !access ? (
+                <p class="notice">Enrol to take the quiz.</p>
+              ) : (
+                <form id="quiz" class="stack" data-lesson={lesson.id}>
+                  <p class="small muted">{questions.length} question(s). Pass mark {course.pass_mark}%.{bestScore !== undefined ? ` Your best score: ${bestScore}%.` : ''}{state.passed.has(lesson.id) ? ' You passed this quiz.' : ''}</p>
+                  {questions.map((q, i) => (
+                    <fieldset class="card q" data-q={q.id}>
+                      <legend><strong>{i + 1}. {q.prompt}</strong></legend>
+                      {q.options.map((o, j) => (
+                        <label class="check"><input type="radio" name={q.id} value={j} required /> {o}</label>
+                      ))}
+                    </fieldset>
+                  ))}
+                  <div class="row"><button class="btn" type="submit">Submit answers</button><output class="form-msg" id="quiz-msg"></output></div>
+                </form>
+              )
+            )}
+
+            <div class="row row--between lesson-foot">
+              <span class="row">
+                {prev && <a class="btn btn--ghost btn--sm" href={`?lesson=${prev.id}`}>← Previous</a>}
+                {next && <a class="btn btn--ghost btn--sm" href={`?lesson=${next.id}`}>Next →</a>}
+              </span>
+              {access && enr && (lesson.type === 'video' || lesson.type === 'reading' || lesson.type === 'download') && (
+                isDone(lesson) ? (
+                  <button class="btn btn--ghost btn--sm" data-api="/api/learn/progress" data-body={JSON.stringify({ lesson_id: lesson.id, undo: true })}>✓ Completed (undo)</button>
+                ) : (
+                  <button class="btn btn--sm" data-api="/api/learn/progress" data-body={JSON.stringify({ lesson_id: lesson.id })} data-redirect={next ? `?lesson=${next.id}` : undefined}>Mark complete{next ? ' & continue' : ''}</button>
+                )
+              )}
+            </div>
+
+            {elig && !cert && elig.reasons.length > 0 && required.length > 0 && (
+              <p class="small muted">Certificate: {elig.reasons.join(' · ')}.</p>
+            )}
+          </>
+        )}
+      </article>
+    </div>
+  </section>
+</Base>
+
+<script>
+  import '../../scripts/api-forms';
+
+  const quiz = document.getElementById('quiz') as HTMLFormElement | null;
+  if (quiz) {
+    const msg = document.getElementById('quiz-msg') as HTMLElement;
+    quiz.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const answers: Record<string, number> = {};
+      quiz.querySelectorAll<HTMLElement>('[data-q]').forEach((fs) => {
+        fs.classList.remove('q--wrong');
+        const picked = fs.querySelector<HTMLInputElement>('input:checked');
+        if (picked) answers[fs.dataset.q!] = Number(picked.value);
+      });
+      const btn = quiz.querySelector('button')!;
+      btn.disabled = true;
+      msg.dataset.kind = 'ok';
+      msg.textContent = 'Checking…';
+      try {
+        const res = await fetch('/api/learn/quiz', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ lesson_id: quiz.dataset.lesson, answers }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'Could not submit');
+        (data.wrong as string[]).forEach((id) => quiz.querySelector(`[data-q="${id}"]`)?.classList.add('q--wrong'));
+        if (data.passed) {
+          msg.dataset.kind = 'ok';
+          msg.textContent = `Passed: ${data.score}% (${data.correct}/${data.total}).${data.certificate ? ' Your certificate has been issued and emailed!' : ''}`;
+          setTimeout(() => location.reload(), 1800);
+        } else {
+          msg.dataset.kind = 'error';
+          msg.textContent = `${data.score}% (${data.correct}/${data.total}). You need ${data.pass_mark}%. Questions marked in red were wrong. Try again.`;
+        }
+      } catch (err) {
+        msg.dataset.kind = 'error';
+        msg.textContent = (err as Error).message;
+      }
+      btn.disabled = false;
+    });
+  }
+</script>
+
+<style>
+  .learn-head { padding-block: 1.25rem 0.75rem; }
+  .learn-head .overline a { color: inherit; }
+  .learn { padding-bottom: 4rem; }
+  .learn-grid { display: grid; gap: 1.25rem; }
+  @media (min-width: 960px) {
+    .learn-grid { grid-template-columns: 19rem minmax(0, 1fr); align-items: start; }
+    .curriculum { position: sticky; top: 5rem; max-height: calc(100vh - 6rem); overflow: auto; }
+  }
+  .curriculum { padding: 1rem; display: grid; gap: 1rem; }
+  .mod__title { font-weight: 800; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 0.4rem; }
+  .curriculum ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.15rem; }
+  .curriculum a, .locked { display: flex; gap: 0.55rem; align-items: flex-start; padding: 0.45rem 0.5rem; border-radius: 10px; text-decoration: none; color: var(--text); font-size: 0.92rem; }
+  .curriculum a:hover { background: var(--surface-alt); }
+  .curriculum a[aria-current='page'] { background: var(--surface-alt); outline: 1px solid var(--brand); font-weight: 700; }
+  .locked { color: var(--muted); }
+  .tick { flex: none; width: 1.4rem; height: 1.4rem; border-radius: 999px; display: grid; place-items: center; font-size: 0.75rem; border: 1px solid var(--border); background: var(--surface-alt); }
+  .tick[data-done] { background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
+  .lesson__title { font-size: clamp(1.6rem, 4vw, 2.3rem); margin: 0; }
+  .video { position: relative; aspect-ratio: 16 / 9; border-radius: var(--radius); overflow: hidden; background: #000; }
+  .video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .body p { margin: 0 0 1rem; white-space: pre-line; }
+  .q { border: 1px solid var(--border); display: grid; gap: 0.5rem; }
+  .q legend { padding: 0 0.3rem; }
+  .q--wrong { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .lesson-foot { border-top: 1px solid var(--border); padding-top: 1rem; }
+  .cert-banner { padding: 0.9rem 1rem; }
+</style>

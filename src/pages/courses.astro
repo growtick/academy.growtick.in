@@ -1,19 +1,24 @@
 ---
 import Base from '../layouts/Base.astro';
 import { anonDb } from '../lib/supabase';
+import { batchWhen } from '../lib/http';
 
 const db = anonDb();
 const { data, error } = await db
   .from('academy_courses')
-  .select('*, academy_batches(id, starts_at, ends_at, venue, capacity, fee, status)')
+  .select('*, academy_batches(id, kind, starts_at, ends_at, venue, capacity, fee, pay_on_spot, status)')
   .eq('status', 'published')
   .order('title');
 
 if (error) console.error('Failed to load published courses:', error);
 
+const now = Date.now();
 const courses = (data ?? []).map((course) => ({
   ...course,
-  academy_batches: course.academy_batches ?? [],
+  // upcoming open batches first; past batches are hidden from the catalogue
+  academy_batches: (course.academy_batches ?? [])
+    .filter((b: any) => b.status === 'open' && new Date(b.ends_at ?? b.starts_at).getTime() > now)
+    .sort((a: any, b: any) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()),
 }));
 
 function deliveryLabel(d: string) {
@@ -26,23 +31,14 @@ function batchStatusLabel(b: (typeof courses)[number]['academy_batches'][number]
   return b.status ?? '—';
 }
 
-function formatWhen(b: (typeof courses)[number]['academy_batches'][number]) {
-  const starts = b.starts_at ? new Date(b.starts_at) : null;
-  const ends = b.ends_at ? new Date(b.ends_at) : null;
-  if (!starts) return 'Date TBA';
-  const opts: Intl.DateTimeFormatOptions = { weekday: 'short', month: 'short', day: 'numeric' };
-  const startStr = starts.toLocaleDateString('en-IN', opts);
-  if (!ends) return startStr;
-  const endStr = ends.toLocaleDateString('en-IN', opts);
-  return startStr + ' · ' + ends.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-}
+const formatWhen = (b: any) => batchWhen(b);
 ---
 <Base title="Courses — Growtick Academy" description="Browse and register for upcoming Growtick Academy batches.">
   <section class="section page-head">
     <div class="wrap">
       <p class="overline">Browse courses</p>
-      <h1>Upcoming batches</h1>
-      <p class="lead">Pick a course, pick a batch, register offline. Pay on arrival at the venue.</p>
+      <h1>Courses &amp; upcoming batches</h1>
+      <p class="lead">Join an offline batch near you or learn online at your own pace. Every course ends with a verifiable certificate.</p>
     </div>
   </section>
 
@@ -84,12 +80,12 @@ function formatWhen(b: (typeof courses)[number]['academy_batches'][number]) {
                       ))}
                     </>
                   ) : (
-                    <span style="font-size:0.75rem; color:var(--muted); font-weight:700;">No batches</span>
+                    <span style="font-size:0.75rem; color:var(--muted); font-weight:700;">{course.delivery === 'offline' ? 'No upcoming batches' : 'Self-paced online'}</span>
                   )}
                 </div>
                 <h3 style="font-size:1.1rem; margin-bottom:0.4rem;">{course.title}</h3>
-                {course.short_description && (
-                  <p style="font-size:0.95rem; color:var(--muted); margin-bottom:0.8rem;">{course.short_description}</p>
+                {course.subtitle && (
+                  <p style="font-size:0.95rem; color:var(--muted); margin-bottom:0.8rem;">{course.subtitle}</p>
                 )}
                 <dl style="margin-bottom:0.8rem; font-size:0.9rem; color:var(--muted); display:grid; grid-template-columns: 7rem 1fr; gap:0.25rem 0.5rem;">
                   <dt>Delivery</dt>
@@ -101,7 +97,13 @@ function formatWhen(b: (typeof courses)[number]['academy_batches'][number]) {
                       <dt>Venue</dt>
                       <dd>{course.academy_batches[0].venue ?? '—'}</dd>
                       <dt>Fee</dt>
-                      <dd>₹{Number(course.academy_batches[0].fee ?? 0)}, pay on arrival</dd>
+                      <dd>{Number(course.academy_batches[0].fee ?? 0) > 0 ? `₹${Number(course.academy_batches[0].fee)}${course.academy_batches[0].pay_on_spot ? ', pay on arrival' : ''}` : 'Free'}</dd>
+                    </>
+                  )}
+                  {course.delivery !== 'offline' && (
+                    <>
+                      <dt>Online</dt>
+                      <dd>{Number(course.online_price ?? 0) > 0 ? `₹${Number(course.online_price)}` : 'Free'}</dd>
                     </>
                   )}
                 </dl>
@@ -110,7 +112,7 @@ function formatWhen(b: (typeof courses)[number]['academy_batches'][number]) {
                   class="btn btn--sm"
                   style="width: 100%;"
                 >
-                  View batches →
+                  View course →
                 </a>
               </article>
             </li>

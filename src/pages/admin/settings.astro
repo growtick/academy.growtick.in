@@ -1,0 +1,37 @@
+---
+import Admin from '../../layouts/Admin.astro';
+import { getSettings } from '../../lib/settings';
+
+export const prerender = false;
+
+const s = await getSettings();
+---
+<Admin title="Settings" lead="Certificate signatory, UPI payment details and contact links.">
+  <form data-api="/api/admin/settings" class="card form-grid" data-keep>
+    <label class="field span-all"><span>Certificate signatory name</span><input name="signatory_name" value={s.signatory_name ?? ''} placeholder="e.g. CA Firstname Lastname, Director" /></label>
+    <label class="field"><span>UPI ID</span><input name="upi_id" value={s.upi_id ?? ''} placeholder="growtick@okaxis" /></label>
+    <label class="field"><span>UPI payee name</span><input name="upi_payee_name" value={s.upi_payee_name ?? ''} placeholder="Growtick" /></label>
+    <label class="field span-all"><span>UPI QR image URL</span><input name="upi_qr_url" value={s.upi_qr_url ?? ''} /></label>
+    <label class="field"><span>Contact phone</span><input name="contact_phone" value={s.contact_phone ?? ''} /></label>
+    <label class="field"><span>WhatsApp link</span><input name="contact_whatsapp" value={s.contact_whatsapp ?? ''} /></label>
+    <label class="field"><span>Instagram link</span><input name="contact_instagram" value={s.contact_instagram ?? ''} /></label>
+    <div class="span-all row"><button class="btn btn--sm" type="submit">Save settings</button><output class="form-msg"></output></div>
+  </form>
+
+  <form data-api="/api/admin/upload" class="card stack-sm">
+    <strong>Upload UPI QR image</strong>
+    {s.upi_qr_url && <img src={s.upi_qr_url} alt="Current UPI QR" width="160" height="160" class="qr" />}
+    <input type="hidden" name="target" value="upi_qr" />
+    <input type="file" name="file" accept="image/png,image/jpeg,image/webp" required />
+    <div class="row"><button class="btn btn--ghost btn--sm" type="submit">Upload QR</button><output class="form-msg"></output></div>
+  </form>
+
+  <div class="card stack-sm small">
+    <strong>Admins</strong>
+    <p>To make someone an admin, ask them to sign in once at <a href="/login">/login</a>, then run <code>node scripts/make-admin.js their@email</code> from the project folder.</p>
+  </div>
+</Admin>
+
+<style>
+  .qr { width: 160px; height: 160px; object-fit: contain; background: #fff; border-radius: 10px; border: 1px solid var(--border); }
+</style>

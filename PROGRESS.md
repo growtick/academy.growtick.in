@@ -1,54 +1,49 @@
 # Progress — Growtick Academy (academy.growtick.in)
 
-Reference log of what has been done and what remains. Plan: `IMPLEMENTAION_PLAN_V1.md`.
+Reference log of what has been done and what remains. Plan: `IMPLEMENTAION_PLAN_V1.md`. Admin how-to: `ADMIN_GUIDE.md`. Learner how-to: `/help`.
 
-## Done
+## Status (15 Nov 2026)
 
-**Database (root cause of the reported bug)**
-- `/courses` returned "Courses are temporarily unavailable" and `/courses/gst-compliance` returned 404 because the `academy_` tables existed on the linked Supabase project (`pbnynqqossnzfuyucqvj`, "Growtick Website`) but had **no table-level privileges granted to `anon`** — every public read failed with `permission denied for table ...`.
-- `supabase/migrations/0001_academy.sql`: added idempotent `GRANT` statements (SELECT on public tables for `anon`/`authenticated`, INSERT on `academy_enrollments`, EXECUTE on `academy_register_for_batch`). `0001` was already applied remotely without the grants, so they shipped as separate migrations:
-  - `0003_grants.sql` — grants for `anon`/`authenticated`
-  - `0004_service_role_grants.sql` — grants for `service_role` (used by server endpoints via `serviceDb()`)
-  - `0006_service_role_enrollment_select.sql` — added missing `SELECT` on `academy_enrollments` for `service_role`
-- `supabase/migrations/0002_seed.sql`: idempotent seed — GST course `gst-compliance` (published), 15 Nov 2026 batch at Chickpet Pathshala Hall (fee ₹49, open, capacity 60), settings placeholders.
-- `npx supabase db push --remote --yes`: applied seed + grants migrations to production. Verified `anon` can read the published course/open batch and `service_role` can read/write backend tables.
+- **Phase 1 (offline flow): complete in code.** Registration, confirmation, phone-friendly check-in, cash tracking, walk-ins, CSV import/export, bulk + single certificate issue/resend, `/verify`, poster page.
+- **Phase 2 (online learning): complete in code.** Sign-in (link + 6-digit code), dashboard, online enrolment, UPI pay → admin approve/reject, curriculum builder, lesson player (video/reading/download/quiz/live), server-graded quizzes, live-class join + attendance, automatic online certificates, admin learners / payments / email log / settings.
 
-**Code**
-- `src/pages/index.astro`: removed unused `import { formatInTimeZone } from 'date-fns-tz'` — package not installed, import unused; it broke `npm run build`.
-- `npm run build` — completes successfully (Astro + Cloudflare adapter).
-- `npm run check` — passes with 0 errors (fixed implicit-any/null types in inline scripts: Header, courses, login, verify, courses/[slug], registered/[reg_code]).
-- Dev server running in background mode per AGENTS.md (`astro dev --background`, pid 14092).
+## Setup checklist
 
-**Registration flow (`/api/register` -> `/registered/[reg_code]`)**
-- `supabase/migrations/0005_fix_register_function.sql`: fixed `academy_register_for_batch()` — it inserted into `academy_enrollments` without setting `course_id` (NOT NULL), so every registration failed with `null value in column "course_id" ... violates not-null constraint`. The function now looks up `course_id` from the batch and includes it in the insert. Fixed both in `0001` (local/fresh) and `0005` (remote-deployed function).
-- End-to-end verified: `POST /api/register` -> `{"ok":true,"reg_code":"GTd75d6986",...}`; enrollment row created with `course_id`, status `active`; `GET /registered/GTd75d6986` -> 200 confirmation page with course, reg code, venue.
+1. ✅ **Migrations 0008–0010 applied to production** (15 Nov 2026, `npx supabase db push --remote`). Verified: anon can't read lesson content, meeting links, quiz questions or profiles; buckets `academy-files` (private) and `academy-public` exist; GST course set to `completion`; signatory = CA Gaurav K Patiyat.
+   - 0008 fixes oversold batches (registration function didn't stop after "batch full"), the profiles data leak, missing service-role grants (certificate `emailed_at`, walk-ins, admin screens) and adds a race-free certificate serial.
+   - 0009 hides lesson content / meeting links from the public anon key, adds learner read policies, `sort_order` on quiz questions (the admin course editor and quiz player need it), and creates the `academy-files` (private) and `academy-public` storage buckets.
+2. **Supabase Auth email template** (Dashboard → Authentication → Email Templates → Magic Link): include `{{ .Token }}` so the email carries the 6-digit code as well as the link. Add `https://academy.growtick.in/auth/callback` to the Auth redirect URL allow-list.
+3. **Settings** at `/admin/settings`: UPI ID and UPI QR image (before selling a paid course).
+4. ⏳ Make admins (no admin exists yet): `node scripts/make-admin.js <email>` (user must have signed in once).
 
-**Registration UX fixes (`src/pages/courses/[slug].astro`)**
-- Batch radio labels renamed from "Register →" to "Select batch" — the old text looked like a submit button but only selected the batch, so clicking it appeared to do nothing.
-- The single open batch is now auto-selected (`checked` on the first radio) so `batch_id` is always sent and users don't get a spurious "Invalid input: batch_id: Required" error.
-- The API error handler now shows field-specific messages (e.g. "batch_id: Required", "phone: Enter a valid 10-digit Indian mobile number") instead of generic "Invalid input".
-- Verified live: `GET /courses` → 200 with GST course listed; `GET /courses/gst-compliance` → 200 course detail page with ₹49 fee and registration form.
+## Certificate template
 
-**Docs**
-- `README.md` — replaced default Astro starter README with project overview, stack, commands, env vars, DB instructions, page list, layout.
-- `CLAUDE.md` — project-level context file (commands, structure, env, known limitations).
-- `PROGRESS.md` — this file.
+`gst-compliance` uses the designed artwork `src/assets/certificates/gst-compliance.jpg` (from `certificate_template.png`). The name is overlaid above the line, serial + verify code bottom-left. Templates are configured per course slug in `TEMPLATES` in `src/lib/certificates.ts` (pixel coordinates); other courses use the generated design. The artwork has the course, date (15 Nov 2026) and signatory printed on it, so a new GST batch on another date needs new artwork.
 
-## In progress
+## Bugs fixed this round (Phase 1)
 
-(none)
+- Registration function inserted even after returning "batch full"/"not found" (missing `return;`). Also now rejects duplicate email per batch and non-open batches.
+- PostgREST returns one-to-one / many-to-one embeds as objects; admin list, `/verify` and certificate code read them as arrays (`x?.[0]`). As a result issued certificates showed "Not issued", course titles fell back to defaults, and the serial prefix was always `CRS`. Fixed via `one()`/`many()` in `src/lib/http.ts`.
+- Dates were formatted without a time zone, so on Cloudflare (UTC) 2 PM IST showed as 8:30 AM. Shared IST `batchWhen()`.
+- `TURNSTILE_SECRET_KEY` was read via build-time `import.meta.env`, so production could silently skip the spam check. Now `astro:env/server`.
+- Sign-in: `redirectTo` → `emailRedirectTo`, and a PKCE cookie client, so `/auth/callback?code=` works. Added code entry, `token_hash` links, profile creation and linking of earlier registrations by email.
+- Header theme script toggled the theme on every page load.
+- Registration email had a hard-coded date/venue. Google Calendar link was malformed. Course pages read a non-existent `short_description`.
+- CSP: inline `style` attributes were blocked in production; now allowed via `style-src-attr 'unsafe-inline'` only.
+- Emails now HTML-escape user input and are all logged (with errors) in `academy_email_log`.
 
-## Next (per IMPLEMENTAION_PLAN_V1.md Phase 1)
+## Deferred / not built
 
-1. Admin login + registrations list, walk-in add, CSV import/export, check-in screen (`/admin`).
-2. Certificate generation (pdf-lib), storage, email, `/verify/[code]` flow.
-3. Poster page `/courses/[slug]/poster` repointed at the new registration.
-4. `npm run build` + `npx wrangler pages dev` on Cloudflare runtime before deploying. (`build` verified; `wrangler pages dev` cannot start in this sandbox — workerd `middleware-insertion-facade.js` internal error on two runs, not a code issue. `dist` is valid CF Pages output, ready for `git push` deploy.)
-5. Obtain remaining launch items: signatory name, UPI ID/QR, Turnstile secret, admin emails, Google Form export CSV, batch capacity confirmation.
+- AI-generated quizzes from uploaded PPT/PDF (needs an LLM API key + file parsing).
+- Scheduled reminder emails (Pages has no cron). Admin "Send reminder email" button covers it.
+- Editing a registrant's name from the admin UI (fix in Supabase before issuing).
+- Certificate revoke button (column exists; set `revoked = true` in Supabase).
+- Home page hero is still hard-coded to the 15 Nov GST batch.
+- `wrangler pages dev` can't start in the dev sandbox (workerd internal error); `npm run build` passes.
 
-## Notes
+## Verification done
 
-- `.env` already contains Supabase + Turnstile + Resend values; `.env.example` has the documented placeholders.
-- `supabase/seed.sql` mirrors `0002_seed.sql` for local stacks (`psql -f supabase/seed.sql` after `supabase db reset`).
-- Cloudflare server secrets must be set in the dashboard or via `npx wrangler secret put` before deploying.
-- `.dev.vars` (gitignored) created locally from `.env` server keys so `wrangler pages dev` can wire API routes when the runtime works.
+- `npm run check`: 0 errors. `npm run build`: passes.
+- Dev-server smoke test: public pages 200, unknown course 404, `/admin*`, `/dashboard`, `/learn/*`, `/pay/*`, `/api/learn/file` redirect to `/login` when signed out; admin/learner APIs return 401 signed out. IST times render correctly.
+- CSV import unit-checked against a Google-Form-style export (BOM, quoted commas, +91/leading-0 mobiles, duplicate and invalid emails, formula-injection-safe export).
+- Not yet exercised end-to-end against the database (needs migrations applied + an admin login): register → check-in → issue; enrol → UPI → approve → lessons → quiz → auto-certificate.

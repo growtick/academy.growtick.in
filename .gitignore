@@ -30,3 +30,6 @@ pnpm-debug.log*
 # Academy source files kept for reference (committed separately if needed)
 GST.html
 IMPLEMENTAION_PLAN_V1.md
+
+# Supabase CLI local state
+supabase/.temp/

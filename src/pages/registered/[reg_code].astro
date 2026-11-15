@@ -1,43 +1,39 @@
 ---
 import Base from '../../layouts/Base.astro';
 import { serviceDb } from '../../lib/supabase';
+import { one, batchWhen, batchWhere } from '../../lib/http';
 
 const db = serviceDb();
 const { reg_code } = Astro.params;
 
-let enrollment = null;
-let batch = null;
-let course = null;
+let batch: any = null;
+let course: any = null;
 let notFound = false;
 let unconfigured = false;
 
 if (db) {
   const { data: enr, error: enrError } = await db
     .from('academy_enrollments')
-    .select('*, academy_batches(venue, starts_at, ends_at, fee, pay_on_spot, academy_courses(title, slug))')
-    .eq('reg_code', reg_code)
+    .select('id, reg_code, academy_batches(kind, venue, address, starts_at, ends_at, fee, pay_on_spot, academy_courses(title, slug))')
+    .eq('reg_code', reg_code ?? '')
     .maybeSingle();
 
   if (enrError || !enr) {
     notFound = true;
   } else {
-    enrollment = enr;
-    batch = enr.academy_batches;
-    course = batch?.academy_courses;
+    batch = one(enr.academy_batches);
+    course = one(batch?.academy_courses);
   }
 } else {
   unconfigured = true;
 }
+if (!notFound && !unconfigured && !course) notFound = true;
 
-function batchWhen(b: any) {
-  const starts = b?.starts_at ? new Date(b.starts_at) : null;
-  const ends = b?.ends_at ? new Date(b.ends_at) : null;
-  if (!starts) return 'Date TBA';
-  const startStr = starts.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
-  if (!ends) return startStr;
-  const timeStr = ends.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-  return `${startStr} · ${timeStr}`;
-}
+const gcal = (d?: string | null) => (d ? new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '') : '');
+const calendarUrl =
+  batch?.starts_at && course
+    ? `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(course.title + ' (Growtick Academy)')}&dates=${gcal(batch.starts_at)}/${gcal(batch.ends_at ?? batch.starts_at)}&details=${encodeURIComponent('Registration code: ' + reg_code + '\nFee: ₹' + Number(batch.fee ?? 0) + (batch.pay_on_spot ? ', pay on arrival' : ''))}&location=${encodeURIComponent(batchWhere(batch))}`
+    : 'https://calendar.google.com/';
 ---
 <Base
   title={`Registration confirmed — ${course?.title ?? 'Growtick Academy'}`}
@@ -79,15 +75,15 @@ function batchWhen(b: any) {
             <dl style="font-size:0.95rem; color:var(--muted); display:grid; grid-template-columns: 7rem 1fr; gap:0.4rem 1rem; margin-bottom:1rem;">
               <dt>Course</dt><dd>{course.title}</dd>
               <dt>When</dt><dd>{batchWhen(batch)}</dd>
-              <dt>Where</dt><dd>{batch?.venue ?? 'Venue TBA'}</dd>
-              <dt>Fee</dt><dd>₹{Number(batch?.fee ?? 0)}, pay on arrival</dd>
+              <dt>Where</dt><dd>{batchWhere(batch)}</dd>
+              <dt>Fee</dt><dd>{Number(batch?.fee ?? 0) > 0 ? `₹${Number(batch?.fee)}${batch?.pay_on_spot ? ', pay on arrival' : ''}` : 'Free'}</dd>
               <dt>Registration code</dt>
               <dd style="font-weight:700; letter-spacing:0.08em; color:var(--purple-deep);">{reg_code}</dd>
             </dl>
             <p style="margin-bottom:1rem;">At the venue, give your registration code or mobile number at check-in. Once you’re marked present, your Certificate of Appreciation will be generated and emailed to you.</p>
             <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
               <a
-                href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(course.title + ' — Growtick Academy')}&dates=${new Date(batch?.starts_at ?? '').toISOString().replace(/[-:]/g, '').split('.')[0]}/Z&details=${encodeURIComponent('Venue: ' + (batch?.venue ?? '') + '\nFee: ₹' + Number(batch?.fee ?? 0) + ', pay on arrival.\nRegistration code: ' + reg_code)}&location=${encodeURIComponent(batch?.venue ?? 'Chickpet, Bangalore')}`}
+                href={calendarUrl}
                 class="btn btn--ghost btn--sm"
                 target="_blank"
                 rel="noopener"

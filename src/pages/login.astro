@@ -1,58 +1,103 @@
 ---
 import Base from '../layouts/Base.astro';
+import { safeNext } from '../lib/http';
 
 const error = Astro.url.searchParams.get('error');
+const next = safeNext(Astro.url.searchParams.get('next'));
+if (Astro.locals.user) return Astro.redirect(next);
 ---
 <Base title="Sign in — Growtick Academy" description="Sign in to your Growtick Academy account." noindex={true}>
   <section class="section">
-    <div class="wrap" style="max-width:28rem;">
-      {error === 'not_configured' ? (
-        <div class="card">
-          <p>Sign-in isn’t configured yet. For the 15 Nov offline batch you don’t need an account — just <a href="/courses/gst-compliance">register for the batch</a> with your name, mobile and email.</p>
-        </div>
-      ) : null}
+    <div class="wrap login">
       <p class="overline">Sign in</p>
-      <h1>Sign in to your academy account</h1>
-      <p>We’ll send a one-time code to your email — no password to remember.</p>
-      <form id="login-form" novalidate>
-        <p id="login-msg" style="color:var(--muted); font-size:0.9rem; margin-bottom:0.75rem;"></p>
-        <div style="display:grid; gap:0.85rem; margin-bottom:1rem;">
-          <label style="display:block; font-size:0.85rem; color:var(--muted); margin-bottom:0.3rem;">Email address</label>
-          <input type="email" name="email" required
-            style="width:100%; min-height:44px; padding:0.65rem 0.8rem; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-alt); color:var(--text); font:inherit;" />
-        </div>
-        <button type="submit" class="btn" style="width:100%;">Send sign-in code</button>
+      <h1>Sign in to Growtick Academy</h1>
+      <p class="muted">We email you a sign-in link and a one-time code. No password needed. Use the same email you registered with and your past registrations and certificates will show up.</p>
+
+      {error === 'not_configured' && <p class="notice">Sign-in isn't configured yet. Offline batches need no account: <a href="/courses">register for a batch</a>.</p>}
+      {error === 'link' && <p class="notice">That sign-in link has expired or was already used. Request a new one below.</p>}
+
+      <form id="email-form" class="card stack-sm" data-next={next} novalidate>
+        <label class="field"><span>Email address</span><input type="email" name="email" required autocomplete="email" /></label>
+        <button type="submit" class="btn">Email me a sign-in code</button>
+        <p class="form-msg" role="status"></p>
       </form>
-      <p style="margin-top:1rem; font-size:0.9rem; color:var(--muted);">Offline registration needs no account — <a href="/courses/gst-compliance">register for the GST batch →</a></p>
+
+      <form id="code-form" class="card stack-sm" hidden novalidate>
+        <p>We sent an email to <strong id="sent-to"></strong>. Click the link in it, or type the code here.</p>
+        <label class="field"><span>Code</span><input name="token" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="10" required /></label>
+        <button type="submit" class="btn">Sign in</button>
+        <button type="button" class="btn btn--ghost btn--sm" id="change-email">Use a different email</button>
+        <p class="form-msg" role="status"></p>
+      </form>
+
+      <p class="small muted">Registering for an offline batch? No account needed. <a href="/courses">See courses →</a></p>
     </div>
   </section>
-  <script>
-    (() => {
-      const form = document.getElementById('login-form') as HTMLFormElement;
-      const msg = document.getElementById('login-msg') as HTMLElement;
-      if (!form || !msg) return;
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const fd = new FormData(form);
-        const email = fd.get('email');
-        msg.textContent = 'Sending code…';
-        try {
-          const res = await fetch('/api/auth/otp', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ email }),
-          });
-          const data = await res.json();
-          if (res.ok && data.ok) {
-            msg.textContent = '';
-            form.innerHTML = '<p style="color:var(--purple-deep); font-weight:700;">Code sent</p><p>Check your inbox (and spam folder) for the sign-in link. It will bring you back here.</p>';
-          } else {
-            msg.textContent = data.error || 'Could not send the code. Try again.';
-          }
-        } catch {
-          msg.textContent = 'Network error. Try again.';
-        }
-      });
-    })();
-  </script>
 </Base>
+
+<script>
+  const emailForm = document.getElementById('email-form') as HTMLFormElement;
+  const next: string = emailForm.dataset.next || '/dashboard';
+  const codeForm = document.getElementById('code-form') as HTMLFormElement;
+  const say = (f: HTMLFormElement, t: string, kind = 'error') => {
+    const m = f.querySelector<HTMLElement>('.form-msg')!;
+    m.textContent = t;
+    m.dataset.kind = kind;
+  };
+  let email = '';
+
+  emailForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    email = String(new FormData(emailForm).get('email') ?? '').trim();
+    if (!email.includes('@')) return say(emailForm, 'Enter a valid email address.');
+    const btn = emailForm.querySelector('button')!;
+    btn.disabled = true;
+    say(emailForm, 'Sending…', 'ok');
+    try {
+      const res = await fetch('/api/auth/otp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, next }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        emailForm.hidden = true;
+        codeForm.hidden = false;
+        document.getElementById('sent-to')!.textContent = email;
+        codeForm.querySelector<HTMLInputElement>('input')!.focus();
+      } else say(emailForm, data.error || 'Could not send the email. Try again.');
+    } catch {
+      say(emailForm, 'Network error. Try again.');
+    }
+    btn.disabled = false;
+  });
+
+  codeForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const token = String(new FormData(codeForm).get('token') ?? '').replace(/\D/g, '');
+    if (token.length < 6) return say(codeForm, 'Enter the code from the email.');
+    say(codeForm, 'Checking…', 'ok');
+    try {
+      const res = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, token, next }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) location.href = data.redirect || next;
+      else say(codeForm, data.error || 'Invalid code.');
+    } catch {
+      say(codeForm, 'Network error. Try again.');
+    }
+  });
+
+  document.getElementById('change-email')!.addEventListener('click', () => {
+    codeForm.hidden = true;
+    emailForm.hidden = false;
+  });
+</script>
+
+<style>
+  .login { max-width: 30rem; display: grid; gap: 1rem; }
+  .login h1 { font-size: clamp(1.8rem, 5vw, 2.4rem); }
+</style>

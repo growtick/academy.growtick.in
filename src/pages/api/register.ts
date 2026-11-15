@@ -1,16 +1,18 @@
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
+import { TURNSTILE_SECRET_KEY } from 'astro:env/server';
 import { serviceDb } from '../../lib/supabase';
 import { registrationConfirmation } from '../../lib/email';
+import { json, makeRegCode, batchWhen, batchWhere } from '../../lib/http';
 
 export const prerender = false;
 
 const schema = z.object({
   name: z.string().trim().min(2, 'Name must be at least 2 characters').max(80),
-  email: z.string().email('Enter a valid email address').toLowerCase(),
+  email: z.string().trim().toLowerCase().pipe(z.string().email('Enter a valid email address')),
   phone: z.string().trim().regex(/^[6-9][0-9]{9}$/, 'Enter a valid 10-digit Indian mobile number'),
   batch_id: z.string().uuid('Invalid batch'),
-  consent: z.preprocess((v) => v === true || v === 'true', z.boolean()),
+  consent: z.preprocess((v) => v === true || v === 'true' || v === 'on', z.literal(true, { errorMap: () => ({ message: 'Please accept the terms to register' }) })),
   turnstile_token: z.string().optional(),
 });
 
@@ -23,7 +25,7 @@ function clientIp(request: Request): string {
 }
 
 async function verifyTurnstile(token: string, ip: string): Promise<{ ok: boolean; reason?: string }> {
-  const secret = import.meta.env.TURNSTILE_SECRET_KEY;
+  const secret = TURNSTILE_SECRET_KEY;
   if (!secret) {
     // Dev without a Turnstile secret: allow, but note it in logs.
     console.log('[turnstile skipped — no TURNSTILE_SECRET_KEY] ip:', ip);
@@ -42,11 +44,6 @@ async function verifyTurnstile(token: string, ip: string): Promise<{ ok: boolean
   }
 }
 
-function makeRegCode(): string {
-  const bytes = new Uint8Array(4);
-  crypto.getRandomValues(bytes);
-  return 'GT' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 export const POST: APIRoute = async ({ request }) => {
   const db = serviceDb();
@@ -101,16 +98,13 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   // Fetch batch for fee/course context (service role bypasses RLS).
-  const { data: batch } = await db.from('academy_batches').select('id, course_id, fee, pay_on_spot, status').eq('id', batch_id).maybeSingle();
-  if (!batch) {
-    return new Response(JSON.stringify({ error: 'Batch not found' }), { status: 404, headers: { 'content-type': 'application/json' } });
-  }
-  if (batch.status !== 'open') {
-    return new Response(JSON.stringify({ error: 'Batch is not open for registration' }), {
-      status: 400,
-      headers: { 'content-type': 'application/json' },
-    });
-  }
+  const { data: batch } = await db
+    .from('academy_batches')
+    .select('id, course_id, kind, starts_at, ends_at, venue, address, fee, pay_on_spot, status')
+    .eq('id', batch_id)
+    .maybeSingle();
+  if (!batch) return json({ error: 'Batch not found' }, 404);
+  if (batch.status !== 'open') return json({ error: 'This batch is no longer open for registration' }, 400);
 
   const regCode = makeRegCode();
   const { data: result, error: rpcError } = await db.rpc('academy_register_for_batch', {
@@ -126,46 +120,37 @@ export const POST: APIRoute = async ({ request }) => {
   });
 
   if (rpcError) {
-    return new Response(JSON.stringify({ error: 'Registration failed', details: String(rpcError) }), {
-      status: 500,
-      headers: { 'content-type': 'application/json' },
-    });
+    console.error('register rpc failed', rpcError);
+    return json({ error: 'Registration failed. Please try again or message us on WhatsApp.' }, 500);
   }
   const row = Array.isArray(result) ? result[0] : result;
   if (!row?.ok) {
-    return new Response(JSON.stringify({ error: row?.error ?? 'Batch is full or unavailable' }), {
-      status: 409,
-      headers: { 'content-type': 'application/json' },
-    });
+    if (row?.error === 'already registered') {
+      const { data: prev } = await db
+        .from('academy_enrollments')
+        .select('reg_code')
+        .eq('batch_id', batch_id)
+        .eq('email', email)
+        .neq('status', 'cancelled')
+        .maybeSingle();
+      return json({ error: 'This email is already registered for this batch.', reg_code: prev?.reg_code ?? null }, 409);
+    }
+    const msg = row?.error === 'batch full' ? 'Sorry, this batch is full.' : (row?.error ?? 'Batch is full or unavailable');
+    return json({ error: msg }, 409);
   }
 
-  // Confirmation email (fire and forget — registration stands even if mail fails).
   const { data: course } = await db.from('academy_courses').select('title').eq('slug', batch.course_id).maybeSingle();
-  void registrationConfirmation({
+  // Email is logged inside sendEmail; registration stands even if mail fails.
+  await registrationConfirmation({
     to: email,
     name,
-    courseTitle: course?.title ?? 'this course',
-    batchWhen: 'Sun 15 Nov 2026 · 2:00–5:00 PM',
-    batchWhere: 'Chickpet Pathshala Hall, Shri Adinath Jain Temple, Chickpet, Bangalore',
+    courseTitle: course?.title ?? 'Growtick Academy course',
+    batchWhen: batchWhen(batch),
+    batchWhere: batchWhere(batch),
     fee: Number(batch.fee ?? 0),
+    payOnSpot: !!batch.pay_on_spot,
     regCode,
-    verifyUrl: `${new URL(request.url).origin}/verify`,
   }).catch(() => {});
 
-  // Log the email attempt (fire and forget — never blocks the response).
-  void (async () => {
-    try {
-      await db.from('academy_email_log').insert({
-        recipient: email,
-        subject: `Registered — ${course?.title ?? 'course'}`,
-        template: 'registration-confirmation',
-        status: 'queued',
-      });
-    } catch {}
-  })();
-
-  return new Response(
-    JSON.stringify({ ok: true, reg_code: regCode, enrollment_id: row.enrollment_id }),
-    { status: 200, headers: { 'content-type': 'application/json' } }
-  );
+  return json({ ok: true, reg_code: regCode, enrollment_id: row.enrollment_id });
 };

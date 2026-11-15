@@ -1,9 +1,10 @@
 ---
 import Base from '../layouts/Base.astro';
 import { serviceDb } from '../lib/supabase';
+import { one } from '../lib/http';
 
 const db = serviceDb();
-const code = (Astro.url.searchParams.get('code') ?? '').trim();
+const code = (Astro.url.searchParams.get('code') ?? '').trim().replace(/[^A-Za-z0-9-]/g, '').slice(0, 40);
 
 let cert = null;
 let notFound = false;
@@ -22,13 +23,14 @@ if (code) {
         revoked,
         academy_enrollments (
           name,
-          email,
+          mode,
           course_id,
-          academy_courses (title, slug),
+          academy_courses (title, slug, certificate_kind),
           academy_batches (venue, starts_at, ends_at)
         )
       `)
-      .eq('verify_code', code)
+      // code is sanitised to [A-Za-z0-9-], so ilike is a case-insensitive equality
+      .or(`verify_code.ilike.${code},serial.ilike.${code}`)
       .maybeSingle();
 
     if (error || !data) {
@@ -38,6 +40,9 @@ if (code) {
     }
   }
 }
+const enr: any = one((cert as any)?.academy_enrollments);
+const crs: any = one(enr?.academy_courses);
+const kindLabel = crs?.certificate_kind === 'completion' ? 'Certificate of Completion' : 'Certificate of Appreciation';
 ---
 <Base
   title="Verify a certificate — Growtick Academy"
@@ -65,7 +70,7 @@ if (code) {
               id="verify-code"
               name="code"
               value={code}
-              placeholder="e.g. GT-GST-2026-0001"
+              placeholder="e.g. GT-VRF-1a2b3c4d5e6f or GT-GST-2026-0001"
               required
               style="flex:1; min-width:220px; min-height:44px; padding:0.65rem 0.8rem; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-alt); color:var(--text); font:inherit;"
             />
@@ -78,14 +83,14 @@ if (code) {
                 <>
                   <p style="color:var(--purple-deep); font-weight:700; font-size:0.85rem; text-transform:uppercase; letter-spacing:0.14em; margin-bottom:0.5rem;">Valid certificate</p>
                   <h2 style="font-size:1.35rem; margin:0 0 0.25rem;">
-                    {cert.academy_enrollments?.[0]?.academy_courses?.[0]?.title ?? 'Growtick Academy course'}
+                    {crs?.title ?? 'Growtick Academy course'}
                   </h2>
-                  <p style="color:var(--muted); margin-bottom:1rem;">Certificate of Appreciation · Growtick Academy</p>
+                  <p style="color:var(--muted); margin-bottom:1rem;">{kindLabel} · Growtick Academy</p>
                   <dl style="display:grid; grid-template-columns: 7rem 1fr; gap:0.4rem 1rem; font-size:0.95rem; color:var(--muted); margin-bottom:1rem;">
-                    <dt>Issued to</dt><dd>{cert.academy_enrollments?.[0]?.name ?? '—'}</dd>
+                    <dt>Issued to</dt><dd>{enr?.name ?? '—'}</dd>
                     <dt>Serial</dt><dd style="font-weight:700; letter-spacing:0.06em; color:var(--ink);">{cert.serial}</dd>
                     <dt>Verification code</dt><dd>{cert.verify_code}</dd>
-                    <dt>Issued</dt><dd>{cert.issued_at ? new Date(cert.issued_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</dd>
+                    <dt>Issued</dt><dd>{cert.issued_at ? new Date(cert.issued_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '—'}</dd>
                   </dl>
                   <p style="color:var(--muted); font-size:0.9rem;">Verify anytime at academy.growtick.in/verify. Need a copy? Contact us on WhatsApp: <a href="https://wa.me/919513059059">+91 95130 59059</a>.</p>
                 </>

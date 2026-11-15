@@ -1,0 +1,84 @@
+---
+import Base from '../../../layouts/Base.astro';
+import { anonDb } from '../../../lib/supabase';
+import { batchWhen, batchWhere, many } from '../../../lib/http';
+
+const { slug } = Astro.params;
+const { data: course } = await anonDb()
+  .from('academy_courses')
+  .select('slug, title, subtitle, outcomes, highlights, cover_url, academy_batches (id, kind, starts_at, ends_at, venue, address, fee, pay_on_spot, status)')
+  .eq('slug', slug ?? '')
+  .maybeSingle();
+
+if (!course) return new Response('Course not found', { status: 404 });
+
+const batch = many<any>(course.academy_batches)
+  .filter((b) => b.status === 'open')
+  .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())[0];
+const courseUrl = `academy.growtick.in/courses/${course.slug}`;
+const outcomes: string[] = Array.isArray(course.outcomes) ? course.outcomes : [];
+const highlights: string[] = Array.isArray(course.highlights) ? course.highlights : [];
+---
+<Base title={`${course.title} poster — Growtick Academy`} description={course.subtitle ?? course.title} ogImage={course.cover_url ?? undefined}>
+  <section class="section">
+    <div class="wrap poster">
+      <article class="card poster__card">
+        <p class="overline">Growtick Academy</p>
+        <h1>{course.title}</h1>
+        {course.subtitle && <p class="lead">{course.subtitle}</p>}
+
+        {outcomes.length > 0 && (
+          <>
+            <h2 class="h3">You'll learn</h2>
+            <ul class="ticks">{outcomes.map((o) => <li>{o}</li>)}</ul>
+          </>
+        )}
+        {highlights.length > 0 && <ul class="chips" role="list">{highlights.map((h) => <li class="badge">{h}</li>)}</ul>}
+
+        {batch ? (
+          <dl class="facts">
+            <dt>When</dt><dd>{batchWhen(batch)}</dd>
+            <dt>Where</dt><dd>{batchWhere(batch)}</dd>
+            <dt>Fee</dt><dd>{Number(batch.fee ?? 0) > 0 ? `₹${batch.fee}${batch.pay_on_spot ? ', pay on the spot' : ''}` : 'Free'} · limited seats</dd>
+          </dl>
+        ) : (
+          <p class="notice">No open batch right now. Online learning and future batches are listed on the course page.</p>
+        )}
+
+        <div class="btn-row">
+          <a class="btn" href={`/courses/${course.slug}`}>Register now →</a>
+          <button class="btn btn--ghost no-print" type="button" id="print">Print poster</button>
+        </div>
+        <p class="register-at">Register at <strong>{courseUrl}</strong></p>
+        <p class="motto">Be GST ready. Be future ready.</p>
+      </article>
+
+      {course.cover_url && (
+        <img class="poster__img" src={course.cover_url} alt={`${course.title} poster artwork`} width="1000" height="1414" />
+      )}
+    </div>
+  </section>
+</Base>
+
+<script>
+  document.getElementById('print')?.addEventListener('click', () => window.print());
+</script>
+
+<style>
+  .poster { display: grid; gap: 2rem; align-items: start; }
+  @media (min-width: 900px) { .poster { grid-template-columns: 1.1fr 0.9fr; } }
+  .poster__card { display: grid; gap: 1rem; }
+  .poster__img { width: 100%; height: auto; border-radius: var(--radius); box-shadow: var(--shadow-hover); }
+  .h3 { font-size: 1.15rem; margin: 0; }
+  .ticks { padding-left: 1.2rem; display: grid; gap: 0.35rem; margin: 0; }
+  .chips { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .facts { display: grid; grid-template-columns: 5rem 1fr; gap: 0.4rem 1rem; margin: 0; }
+  .facts dt { color: var(--muted); }
+  .facts dd { margin: 0; font-weight: 700; }
+  .register-at { font-size: 1.1rem; margin: 0; }
+  .motto { font-weight: 800; color: var(--brand-text); letter-spacing: -0.01em; margin: 0; }
+  @media print {
+    :global(header), :global(footer), .no-print { display: none !important; }
+    .poster { grid-template-columns: 1fr 1fr; }
+  }
+</style>

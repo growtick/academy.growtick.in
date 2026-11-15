@@ -1,0 +1,72 @@
+---
+import Admin from '../../layouts/Admin.astro';
+import { serviceDb } from '../../lib/supabase';
+import { one } from '../../lib/http';
+
+export const prerender = false;
+
+const db = serviceDb();
+const show = Astro.url.searchParams.get('show') === 'all' ? 'all' : 'pending';
+let rows: any[] = [];
+if (db) {
+  let q = db
+    .from('academy_enrollments')
+    .select('id, name, email, phone, amount, upi_ref, status, payment_status, created_at, academy_courses (title)')
+    .eq('payment_method', 'upi')
+    .eq('mode', 'online')
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (show === 'pending') q = q.eq('status', 'pending_payment');
+  const { data } = await q;
+  rows = data ?? [];
+}
+const api = '/api/admin/enrollments';
+const when = (d: string) => new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+---
+<Admin title="UPI payments" lead="Match each UPI reference (UTR) against your bank or UPI app statement, then approve to unlock the course.">
+  <div class="row">
+    <a class={show === 'pending' ? 'btn btn--sm' : 'btn btn--ghost btn--sm'} href="/admin/payments">Waiting</a>
+    <a class={show === 'all' ? 'btn btn--sm' : 'btn btn--ghost btn--sm'} href="/admin/payments?show=all">All UPI enrolments</a>
+  </div>
+
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Learner</th><th>Course</th><th>Amount</th><th>UPI ref</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr>
+            <td><strong>{r.name}</strong><div class="small muted">{r.email}{r.phone ? ` · ${r.phone}` : ''}</div><div class="small muted">{when(r.created_at)}</div></td>
+            <td>{one<any>(r.academy_courses)?.title}</td>
+            <td class="mono">₹{r.amount ?? 0}</td>
+            <td class="mono">{r.upi_ref ?? <span class="muted">not submitted</span>}</td>
+            <td>
+              {r.status === 'pending_payment'
+                ? r.payment_status === 'rejected'
+                  ? <span class="badge badge--bad">rejected</span>
+                  : r.upi_ref ? <span class="badge badge--warn">to review</span> : <span class="badge">awaiting payment</span>
+                : <span class="badge badge--ok">{r.payment_status}</span>}
+            </td>
+            <td>
+              {r.status === 'pending_payment' && r.upi_ref && r.payment_status !== 'rejected' && (
+                <span class="row">
+                  <button class="btn btn--sm" data-api={api} data-body={JSON.stringify({ action: 'approve_upi', enrollment_id: r.id })} data-confirm={`Approve ₹${r.amount} from ${r.name} (UTR ${r.upi_ref})?`}>Approve</button>
+                  <form data-api={api} data-confirm="Reject this payment and email the learner?" class="row">
+                    <input type="hidden" name="action" value="reject_upi" />
+                    <input type="hidden" name="enrollment_id" value={r.id} />
+                    <input class="input reason" name="reason" placeholder="Reason (optional)" />
+                    <button class="btn btn--ghost btn--sm" type="submit">Reject</button>
+                  </form>
+                </span>
+              )}
+            </td>
+          </tr>
+        ))}
+        {rows.length === 0 && <tr><td colspan="6" class="muted">{show === 'pending' ? 'Nothing waiting. 🎉' : 'No UPI enrolments yet.'}</td></tr>}
+      </tbody>
+    </table>
+  </div>
+</Admin>
+
+<style>
+  .reason { min-height: 36px; width: 11rem; padding: 0.35rem 0.6rem; }
+</style>

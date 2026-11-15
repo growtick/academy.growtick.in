@@ -1,0 +1,129 @@
+---
+import Base from '../layouts/Base.astro';
+
+const sections = [
+  ['offline', 'Attend an offline batch'],
+  ['online', 'Learn online'],
+  ['payment', 'Paying by UPI'],
+  ['certificates', 'Certificates'],
+  ['account', 'Signing in & your account'],
+  ['faq', 'Common questions'],
+];
+---
+<Base title="Help & user guide — Growtick Academy" description="How to register for a batch, learn online, pay by UPI and get your Growtick Academy certificate.">
+  <section class="section page-head">
+    <div class="wrap">
+      <p class="overline">Help</p>
+      <h1>How Growtick Academy works</h1>
+      <p class="lead">Everything you need to register, attend or learn online, and get your certificate.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap help">
+      <nav class="card toc" aria-label="On this page">
+        <strong>On this page</strong>
+        <ol>{sections.map(([id, t]) => <li><a href={`#${id}`}>{t}</a></li>)}</ol>
+      </nav>
+
+      <div class="prose stack">
+        <section id="offline" class="card">
+          <h2>Attend an offline batch</h2>
+          <p>No account is needed to register for an offline batch.</p>
+          <ol class="steps-list">
+            <li>Open <a href="/courses">Courses</a> and pick a course.</li>
+            <li>Under <strong>Attend offline</strong>, choose a batch. You'll see the date, time, venue, fee and seats left.</li>
+            <li>Enter your full name, email and 10-digit mobile number, accept the terms and tap <strong>Register for this batch</strong>.</li>
+            <li>You'll see a confirmation page with your <strong>registration code</strong> (for example <code>GT3f9a1c2b</code>). The same details arrive by email. Save a screenshot.</li>
+            <li>At the venue, tell the team your registration code or mobile number to check in. If the fee is "pay on arrival", pay it at the desk.</li>
+            <li>After the session your certificate is emailed to you. See <a href="#certificates">Certificates</a>.</li>
+          </ol>
+          <p class="small muted">Use <strong>Add to Google Calendar</strong> on the confirmation page so you don't miss the session. Lost the confirmation? Message us on WhatsApp with your registered mobile number.</p>
+        </section>
+
+        <section id="online" class="card">
+          <h2>Learn online</h2>
+          <ol class="steps-list">
+            <li>Open the course and look for the <strong>Learn online</strong> card. Tap <strong>Sign in to enrol</strong> (see <a href="#account">signing in</a>).</li>
+            <li>Tap <strong>Enrol online</strong>. Free courses unlock straight away. Paid courses take you to the payment page (see <a href="#payment">Paying by UPI</a>).</li>
+            <li>Once unlocked, open the course from <a href="/dashboard">My learning</a>. The lesson list is on the left (above the lesson on a phone).</li>
+            <li>Lesson types:
+              <ul>
+                <li><strong>Video</strong>: watch, then tap <strong>Mark complete</strong>.</li>
+                <li><strong>Reading</strong>: read the notes, then tap <strong>Mark complete</strong>.</li>
+                <li><strong>Download</strong>: tap the download button. This marks the lesson complete.</li>
+                <li><strong>Quiz</strong>: answer every question and submit. You pass when your score reaches the pass mark shown above the quiz. Wrong answers are highlighted in red, and you can retry as many times as you like.</li>
+                <li><strong>Live class</strong>: the <strong>Join live class</strong> button appears 15 minutes before the start time. Joining through this button records your attendance.</li>
+              </ul>
+            </li>
+            <li>Your progress bar fills as you complete lessons. Lessons marked "optional" don't count towards the certificate.</li>
+          </ol>
+          <p class="small muted">Some courses have a free <strong>Preview</strong> lesson you can open before paying.</p>
+        </section>
+
+        <section id="payment" class="card">
+          <h2>Paying by UPI</h2>
+          <ol class="steps-list">
+            <li>On the payment page, scan the QR code with any UPI app (GPay, PhonePe, Paytm, BHIM) or pay to the UPI ID shown. On a phone you can tap <strong>Open UPI app</strong>.</li>
+            <li>Pay the exact amount shown.</li>
+            <li>In your UPI app, open the transaction and copy the <strong>12-digit UPI reference number (UTR)</strong>.</li>
+            <li>Back on the payment page, enter the UTR, your full name (this is printed on your certificate) and mobile number, then tap <strong>Submit for confirmation</strong>.</li>
+            <li>Our team checks the payment, usually within a few hours. You'll get an email when the course is unlocked. Until then, <a href="/dashboard">My learning</a> shows "Payment under review".</li>
+          </ol>
+          <p class="small muted">If we can't match your payment you'll get an email explaining why, and you can submit the reference again from the same page. Each UTR can only be used once.</p>
+        </section>
+
+        <section id="certificates" class="card">
+          <h2>Certificates</h2>
+          <ul>
+            <li><strong>Offline batches:</strong> once you're checked in as present, the team issues your certificate after the session. It is emailed to you with a PDF download link.</li>
+            <li><strong>Online courses:</strong> your certificate is issued automatically, the moment you finish every required lesson, pass the quiz and (if the course has one) attend the live class.</li>
+            <li>Every certificate has a <strong>serial number</strong> and a <strong>verification code</strong>. Anyone, such as an employer, can check it at <a href="/verify">academy.growtick.in/verify</a>.</li>
+            <li>Signed-in learners can download certificates any time from <a href="/dashboard">My learning</a>.</li>
+          </ul>
+          <p class="small muted">The name on the certificate is the one you registered with. For online courses you can update it under <strong>My learning → Profile</strong> before the certificate is issued.</p>
+        </section>
+
+        <section id="account" class="card">
+          <h2>Signing in &amp; your account</h2>
+          <ol class="steps-list">
+            <li>Go to <a href="/login">Sign in</a> and enter your email.</li>
+            <li>We email you a sign-in link and a one-time code. Click the link, or type the code on the sign-in page (handy if the email opened on another device).</li>
+            <li>There's no password to remember.</li>
+          </ol>
+          <p>Sign in with the <strong>same email you used to register</strong> and your offline registrations and certificates appear in <a href="/dashboard">My learning</a> automatically.</p>
+        </section>
+
+        <section id="faq" class="card">
+          <h2>Common questions</h2>
+          <details><summary>I didn't get the email.</summary><p>Check your spam/promotions folder for mail from academy@growtick.in. Make sure the email address was typed correctly. Still nothing? Message us on WhatsApp.</p></details>
+          <details><summary>It says "already registered".</summary><p>That email is already booked for this batch. Use the <strong>View your registration</strong> link shown to see your code.</p></details>
+          <details><summary>The batch is full.</summary><p>Message us on WhatsApp to join the waiting list, or check <a href="/courses">Courses</a> for another batch.</p></details>
+          <details><summary>My name is wrong on the certificate.</summary><p>Message us with your certificate serial number and the correct spelling and we'll reissue it.</p></details>
+          <details><summary>The sign-in link says it expired.</summary><p>Links and codes work once and expire after a short time. Request a new one from the sign-in page.</p></details>
+        </section>
+
+        <section class="card contact">
+          <h2>Still need help?</h2>
+          <p>WhatsApp <a href="https://wa.me/919513059059">+91 95130 59059</a> · Instagram <a href="https://instagram.com/growtick.in">@growtick.in</a></p>
+        </section>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .help { display: grid; gap: 1.5rem; }
+  @media (min-width: 960px) {
+    .help { grid-template-columns: 15rem minmax(0, 1fr); align-items: start; }
+    .toc { position: sticky; top: 5rem; }
+  }
+  .toc ol { margin: 0.5rem 0 0; padding-left: 1.2rem; display: grid; gap: 0.35rem; }
+  .help section { scroll-margin-top: 5rem; }
+  .help h2 { font-size: 1.35rem; margin-top: 0; }
+  .steps-list { padding-left: 1.3rem; display: grid; gap: 0.5rem; }
+  .steps-list ul { margin-top: 0.4rem; display: grid; gap: 0.3rem; }
+  details { border-top: 1px solid var(--border); padding: 0.6rem 0; }
+  details summary { cursor: pointer; font-weight: 600; }
+  details p { margin: 0.5rem 0 0; }
+</style>

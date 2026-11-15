@@ -1,0 +1,117 @@
+---
+import Admin from '../../layouts/Admin.astro';
+import { serviceDb } from '../../lib/supabase';
+import { one, many } from '../../lib/http';
+import { certificatePublicUrl } from '../../lib/certificates';
+
+export const prerender = false;
+
+const db = serviceDb();
+const courseFilter = Astro.url.searchParams.get('course') ?? '';
+let rows: any[] = [];
+let courses: any[] = [];
+const required = new Map<string, Set<string>>();
+const quizzes = new Map<string, Set<string>>();
+
+if (db) {
+  const { data: cs } = await db.from('academy_courses').select('slug, title').neq('delivery', 'offline').order('title');
+  courses = cs ?? [];
+  let q = db
+    .from('academy_enrollments')
+    .select(
+      `id, name, email, phone, status, payment_status, attended_at, created_at, course_id,
+       academy_courses (title),
+       academy_certificates (serial, pdf_path, revoked),
+       academy_lesson_progress (lesson_id),
+       academy_quiz_attempts (lesson_id, score, passed)`
+    )
+    .eq('mode', 'online')
+    .neq('status', 'cancelled')
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (courseFilter) q = q.eq('course_id', courseFilter);
+  const { data } = await q;
+  rows = data ?? [];
+
+  const slugs = [...new Set(rows.map((r) => r.course_id))];
+  if (slugs.length) {
+    const { data: mods } = await db.from('academy_modules').select('course_id, academy_lessons (id, type, required)').in('course_id', slugs);
+    for (const m of mods ?? []) {
+      const req = required.get(m.course_id) ?? new Set<string>();
+      const qz = quizzes.get(m.course_id) ?? new Set<string>();
+      for (const l of many<any>(m.academy_lessons)) {
+        if (l.required && l.type !== 'live') req.add(l.id);
+        if (l.required && l.type === 'quiz') qz.add(l.id);
+      }
+      required.set(m.course_id, req);
+      quizzes.set(m.course_id, qz);
+    }
+  }
+}
+
+const progress = (r: any) => {
+  const req = required.get(r.course_id);
+  if (!req?.size) return 0;
+  const done = new Set(many<any>(r.academy_lesson_progress).map((p) => p.lesson_id));
+  return Math.round(([...req].filter((id) => done.has(id)).length / req.size) * 100);
+};
+const best = (r: any) => {
+  const scores = many<any>(r.academy_quiz_attempts).map((a) => a.score);
+  return scores.length ? Math.max(...scores) : null;
+};
+const api = '/api/admin/enrollments';
+---
+<Admin title="Online learners" lead="Progress, quiz scores and certificates for online enrolments.">
+  <form method="get" class="row">
+    <label class="field" style="min-width:min(100%, 18rem);">
+      <span>Course</span>
+      <select name="course" data-autosubmit>
+        <option value="">All online courses</option>
+        {courses.map((c) => <option value={c.slug} selected={c.slug === courseFilter}>{c.title}</option>)}
+      </select>
+    </label>
+    <a class="btn btn--ghost btn--sm" href={`/api/admin/export?mode=online${courseFilter ? `&course=${courseFilter}` : ''}`}>Export CSV</a>
+  </form>
+
+  <input class="input" type="search" placeholder="Search learners…" data-filter="#learners" />
+
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Learner</th><th>Course</th><th>Status</th><th>Progress</th><th>Best quiz</th><th>Live</th><th>Certificate</th></tr></thead>
+      <tbody id="learners">
+        {rows.map((r) => {
+          const cert = one<any>(r.academy_certificates);
+          const pdf = certificatePublicUrl(cert?.pdf_path);
+          const p = progress(r);
+          const b = best(r);
+          return (
+            <tr data-row={`${r.name} ${r.email} ${r.phone ?? ''}`}>
+              <td><strong>{r.name}</strong><div class="small muted">{r.email}</div></td>
+              <td>{one<any>(r.academy_courses)?.title}</td>
+              <td><span class={r.status === 'pending_payment' ? 'badge badge--warn' : r.status === 'completed' ? 'badge badge--ok' : 'badge'}>{r.status.replace('_', ' ')}</span></td>
+              <td><span class="row small"><span class="progress" style="width:6rem;"><i style={`width:${p}%`}></i></span>{p}%</span></td>
+              <td class="mono">{b === null ? '—' : `${b}%`}</td>
+              <td>
+                {r.attended_at
+                  ? <button class="btn btn--ghost btn--sm" data-api={api} data-body={JSON.stringify({ action: 'checkin', enrollment_id: r.id, undo: true })} data-confirm="Clear live attendance?">✓ attended</button>
+                  : <button class="btn btn--ghost btn--sm" data-api={api} data-body={JSON.stringify({ action: 'checkin', enrollment_id: r.id })}>Mark attended</button>}
+              </td>
+              <td>
+                {cert ? (
+                  <span class="row">
+                    <span class="mono small">{cert.serial}</span>
+                    {pdf && <a href={pdf} target="_blank" rel="noopener">PDF</a>}
+                    <button class="btn btn--ghost btn--sm" data-api={api} data-body={JSON.stringify({ action: 'resend', enrollment_id: r.id })} data-keep>Resend</button>
+                  </span>
+                ) : r.status !== 'pending_payment' ? (
+                  <button class="btn btn--ghost btn--sm" data-api={api} data-body={JSON.stringify({ action: 'issue', enrollment_id: r.id })} data-confirm="Issue a certificate now, even if requirements aren't complete?">Issue manually</button>
+                ) : null}
+              </td>
+            </tr>
+          );
+        })}
+        {rows.length === 0 && <tr><td colspan="7" class="muted">No online learners yet.</td></tr>}
+      </tbody>
+    </table>
+  </div>
+</Admin>

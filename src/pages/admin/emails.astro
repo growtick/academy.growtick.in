@@ -1,0 +1,40 @@
+---
+import Admin from '../../layouts/Admin.astro';
+import { serviceDb } from '../../lib/supabase';
+
+export const prerender = false;
+
+const db = serviceDb();
+const { data } = db
+  ? await db.from('academy_email_log').select('*').order('sent_at', { ascending: false }).limit(300)
+  : { data: [] as any[] };
+const rows = data ?? [];
+const failed = rows.filter((r: any) => r.status === 'failed').length;
+---
+<Admin title="Email log" lead={`Last ${rows.length} emails sent from academy@growtick.in${failed ? ` · ${failed} failed` : ''}.`}>
+  <input class="input" type="search" placeholder="Filter by recipient, subject or template…" data-filter="#emails" />
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>When</th><th>To</th><th>Subject</th><th>Template</th><th>Status</th></tr></thead>
+      <tbody id="emails">
+        {rows.map((r: any) => (
+          <tr data-row={`${r.recipient} ${r.subject} ${r.template} ${r.status}`}>
+            <td class="small">{new Date(r.sent_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })}</td>
+            <td>{r.recipient}</td>
+            <td>{r.subject}</td>
+            <td class="small muted">{r.template}</td>
+            <td>
+              <span class={r.status === 'sent' ? 'badge badge--ok' : r.status === 'failed' ? 'badge badge--bad' : 'badge badge--warn'}>{r.status}</span>
+              {r.error && <div class="small muted err">{r.error}</div>}
+            </td>
+          </tr>
+        ))}
+        {rows.length === 0 && <tr><td colspan="5" class="muted">No emails logged yet.</td></tr>}
+      </tbody>
+    </table>
+  </div>
+</Admin>
+
+<style>
+  .err { max-width: 22rem; overflow-wrap: anywhere; }
+</style>

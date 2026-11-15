@@ -1,0 +1,193 @@
+---
+import Base from '../layouts/Base.astro';
+import { serviceDb } from '../lib/supabase';
+import { ensureProfile, batchWhen, batchWhere, one, many } from '../lib/http';
+import { certificatePublicUrl } from '../lib/certificates';
+
+export const prerender = false;
+
+const user = Astro.locals.user!;
+const db = serviceDb();
+if (!db) return new Response('Not configured', { status: 503 });
+
+await ensureProfile({ id: user.id, email: user.email ?? null });
+const { data: profile } = await db.from('academy_profiles').select('full_name, phone, email').eq('id', user.id).maybeSingle();
+
+const { data: rows } = await db
+  .from('academy_enrollments')
+  .select(
+    `id, mode, status, payment_status, upi_ref, reg_code, attended_at, created_at, course_id,
+     academy_courses (slug, title, subtitle),
+     academy_batches (kind, starts_at, ends_at, venue, address, fee, pay_on_spot),
+     academy_certificates (serial, verify_code, pdf_path, revoked),
+     academy_lesson_progress (lesson_id)`
+  )
+  .eq('user_id', user.id)
+  .neq('status', 'cancelled')
+  .order('created_at', { ascending: false });
+const enrolments = rows ?? [];
+
+// required lesson counts per online course for progress bars
+const onlineSlugs = [...new Set(enrolments.filter((e) => e.mode === 'online').map((e) => e.course_id))];
+const requiredByCourse = new Map<string, Set<string>>();
+if (onlineSlugs.length) {
+  const { data: mods } = await db.from('academy_modules').select('course_id, academy_lessons (id, required)').in('course_id', onlineSlugs);
+  for (const m of mods ?? []) {
+    const set = requiredByCourse.get(m.course_id) ?? new Set<string>();
+    many<any>(m.academy_lessons).filter((l) => l.required).forEach((l) => set.add(l.id));
+    requiredByCourse.set(m.course_id, set);
+  }
+}
+const pct = (e: any) => {
+  const req = requiredByCourse.get(e.course_id);
+  if (!req?.size) return 0;
+  const done = many<any>(e.academy_lesson_progress).filter((p) => req.has(p.lesson_id)).length;
+  return Math.round((done / req.size) * 100);
+};
+
+const now = Date.now();
+const upcoming = enrolments.filter((e) => {
+  const b = one<any>(e.academy_batches);
+  return b && new Date(b.ends_at ?? b.starts_at).getTime() > now;
+});
+const certs = enrolments.map((e) => ({ e, c: one<any>(e.academy_certificates) })).filter((x) => x.c && !x.c.revoked);
+const needsName = !profile?.full_name;
+---
+<Base title="My learning — Growtick Academy" description="Your courses, sessions and certificates." noindex={true}>
+  <section class="section page-head">
+    <div class="wrap">
+      <p class="overline">My learning</p>
+      <h1>Hi{profile?.full_name ? `, ${profile.full_name.split(' ')[0]}` : ''}</h1>
+      <p class="lead">Your courses, upcoming sessions and certificates in one place.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap stack">
+      {needsName && (
+        <form class="card stack-sm" data-api="/api/profile">
+          <strong>Add your full name. It's printed on your certificates.</strong>
+          <div class="form-grid">
+            <label class="field"><span>Full name</span><input name="full_name" required minlength="2" maxlength="80" autocomplete="name" /></label>
+            <label class="field"><span>Mobile (optional)</span><input name="phone" inputmode="numeric" autocomplete="tel-national" /></label>
+          </div>
+          <div class="row"><button class="btn btn--sm" type="submit">Save</button><output class="form-msg"></output></div>
+        </form>
+      )}
+
+      {upcoming.length > 0 && (
+        <div class="stack-sm">
+          <h2 class="h3">Upcoming sessions</h2>
+          {upcoming.map((e) => {
+            const b = one<any>(e.academy_batches);
+            const c = one<any>(e.academy_courses);
+            return (
+              <div class="card row row--between">
+                <span class="stack-sm">
+                  <strong>{c?.title}</strong>
+                  <span class="small muted">{batchWhen(b)} · {batchWhere(b)}</span>
+                </span>
+                {e.mode === 'offline'
+                  ? <a class="btn btn--ghost btn--sm" href={`/registered/${e.reg_code}`}>Code {e.reg_code}</a>
+                  : <a class="btn btn--sm" href={`/learn/${c?.slug}`}>Open course</a>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div class="stack-sm">
+        <h2 class="h3">My courses</h2>
+        {enrolments.length === 0 ? (
+          <div class="card">
+            <p>You haven't joined a course yet. Registered for an offline batch with a different email? Sign in with that email to see it here.</p>
+            <a class="btn btn--sm" href="/courses">Browse courses</a>
+          </div>
+        ) : (
+          <ul class="grid courses" role="list">
+            {enrolments.map((e) => {
+              const c = one<any>(e.academy_courses);
+              const cert = one<any>(e.academy_certificates);
+              const p = pct(e);
+              return (
+                <li class="card stack-sm">
+                  <span class="row">
+                    <span class="badge">{e.mode === 'online' ? 'Online' : 'Offline'}</span>
+                    {e.status === 'completed' || cert ? <span class="badge badge--ok">Completed</span> : null}
+                    {e.status === 'pending_payment' && e.payment_status === 'rejected' && <span class="badge badge--bad">Payment not confirmed</span>}
+                    {e.status === 'pending_payment' && e.payment_status !== 'rejected' && (e.upi_ref ? <span class="badge badge--warn">Payment under review</span> : <span class="badge badge--warn">Awaiting payment</span>)}
+                    {e.mode === 'offline' && e.attended_at && <span class="badge badge--ok">Attended</span>}
+                  </span>
+                  <strong>{c?.title}</strong>
+                  {e.mode === 'online' && e.status !== 'pending_payment' && (
+                    <span class="row small"><span class="progress" style="flex:1;"><i style={`width:${p}%`}></i></span>{p}%</span>
+                  )}
+                  <span class="row">
+                    {e.mode === 'online' ? (
+                      e.status === 'pending_payment'
+                        ? <a class="btn btn--sm" href={`/pay/${e.id}`}>{e.upi_ref && e.payment_status !== 'rejected' ? 'View payment' : 'Pay now'}</a>
+                        : <a class="btn btn--sm" href={`/learn/${c?.slug}`}>{p > 0 ? 'Continue' : 'Start'}</a>
+                    ) : (
+                      <a class="btn btn--ghost btn--sm" href={`/registered/${e.reg_code}`}>Registration</a>
+                    )}
+                    {cert && !cert.revoked && certificatePublicUrl(cert.pdf_path) && (
+                      <a class="btn btn--ghost btn--sm" href={certificatePublicUrl(cert.pdf_path)} target="_blank" rel="noopener">Certificate</a>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {certs.length > 0 && (
+        <div class="stack-sm">
+          <h2 class="h3">Certificates</h2>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Course</th><th>Serial</th><th></th></tr></thead>
+              <tbody>
+                {certs.map(({ e, c }) => (
+                  <tr>
+                    <td>{one<any>(e.academy_courses)?.title}</td>
+                    <td class="mono">{c.serial}</td>
+                    <td class="row">
+                      {certificatePublicUrl(c.pdf_path) && <a href={certificatePublicUrl(c.pdf_path)} target="_blank" rel="noopener">PDF</a>}
+                      <a href={`/verify?code=${encodeURIComponent(c.verify_code)}`}>Verify link</a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {!needsName && (
+        <details class="card">
+          <summary>Profile</summary>
+          <form class="stack-sm" data-api="/api/profile" data-keep>
+            <div class="form-grid">
+              <label class="field"><span>Full name (on certificates)</span><input name="full_name" required minlength="2" maxlength="80" value={profile?.full_name ?? ''} /></label>
+              <label class="field"><span>Mobile</span><input name="phone" inputmode="numeric" value={profile?.phone ?? ''} /></label>
+              <label class="field"><span>Email</span><input value={profile?.email ?? user.email ?? ''} disabled /></label>
+            </div>
+            <div class="row"><button class="btn btn--sm" type="submit">Save</button><output class="form-msg"></output></div>
+            <p class="small muted">Changes apply to certificates issued from now on.</p>
+          </form>
+        </details>
+      )}
+    </div>
+  </section>
+</Base>
+
+<script>
+  import '../scripts/api-forms';
+</script>
+
+<style>
+  .h3 { font-size: 1.2rem; margin: 0; }
+  .courses { grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 0.85rem; list-style: none; padding: 0; margin: 0; }
+  .courses .card { padding: 1.1rem; }
+</style>

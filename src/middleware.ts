@@ -18,6 +18,16 @@ export const onRequest = async (
 
   const { data: { user } } = await context.locals.supabase.auth.getUser();
   context.locals.user = user ?? null;
+  context.locals.isAdmin = false;
+  if (user) {
+    // owner-read RLS policy lets the user read their own role
+    const { data: profile } = await context.locals.supabase
+      .from('academy_profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle();
+    context.locals.isAdmin = profile?.role === 'admin';
+  }
 
   const path = new URL(context.request.url).pathname;
   const isProtected = PROTECTED_PREFIXES.some(
@@ -28,15 +38,8 @@ export const onRequest = async (
     return context.redirect(`/login?next=${encodeURIComponent(path)}`);
   }
 
-  if (user && (path === '/admin' || path.startsWith('/admin/'))) {
-    const { data: profile } = await context.locals.supabase
-      .from('academy_profiles')
-      .select('role')
-      .eq('id', user.id)
-      .maybeSingle();
-    if (profile?.role !== 'admin') {
-      return new Response('Forbidden', { status: 403 });
-    }
+  if (user && (path === '/admin' || path.startsWith('/admin/')) && !context.locals.isAdmin) {
+    return new Response('Forbidden: this account is not an academy admin.', { status: 403 });
   }
 
   return next();

@@ -1,28 +1,79 @@
 ---
-import Base from '../../layouts/Base.astro';
+import Admin from '../../layouts/Admin.astro';
+import { serviceDb } from '../../lib/supabase';
+import { batchWhen, one } from '../../lib/http';
 
 export const prerender = false;
----
-<Base title="Admin dashboard — Growtick Academy" description="Admin dashboard for batch registrations, check-in and certificates." noindex={true}>
-  <section class="section page-head">
-    <div class="wrap">
-      <p class="overline">Admin dashboard</p>
-      <h1>Growtick Academy admin</h1>
-      <p class="lead">Manage the 15 Nov GST batch: registrations, check-in and certificates.</p>
-    </div>
-  </section>
 
-  <section class="section">
-    <div class="wrap">
-      <div class="card" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; margin-top:1rem;">
-        <a href="/admin/registrations" class="btn" style="text-align:center;">Batch registrations &amp; check-in</a>
-        <a href="/verify" class="btn btn--ghost" style="text-align:center;">Verify a certificate</a>
-        <a href="/courses/gst-compliance" class="btn btn--ghost" style="text-align:center;">View course page</a>
-      </div>
-    </div>
-  </section>
-</Base>
+const db = serviceDb();
+const count = async (build: (q: any) => any) => {
+  if (!db) return 0;
+  const { count } = await build(db.from('academy_enrollments').select('id', { head: true, count: 'exact' }));
+  return count ?? 0;
+};
+
+const [registrations, present, pendingUpi, online] = await Promise.all([
+  count((q) => q.eq('mode', 'offline').neq('status', 'cancelled')),
+  count((q) => q.eq('mode', 'offline').not('attended_at', 'is', null)),
+  count((q) => q.eq('payment_method', 'upi').eq('status', 'pending_payment').eq('payment_status', 'pending').not('upi_ref', 'is', null)),
+  count((q) => q.eq('mode', 'online').neq('status', 'cancelled')),
+]);
+let certs = 0;
+let upcoming: any[] = [];
+let courses = 0;
+if (db) {
+  const c = await db.from('academy_certificates').select('id', { head: true, count: 'exact' }).eq('revoked', false);
+  certs = c.count ?? 0;
+  const cc = await db.from('academy_courses').select('slug', { head: true, count: 'exact' });
+  courses = cc.count ?? 0;
+  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const { data } = await db
+    .from('academy_batches')
+    .select('id, kind, starts_at, ends_at, venue, status, capacity, academy_courses (title)')
+    .gte('starts_at', since)
+    .order('starts_at')
+    .limit(6);
+  upcoming = data ?? [];
+}
+---
+<Admin title="Overview" heading="Growtick Academy admin" lead="Event-day check-in, UPI approvals, courses and certificates.">
+  {!db && <div class="notice">Admin data needs <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code>.</div>}
+
+  <div class="grid stats">
+    <a class="card stat" href="/admin/registrations"><b>{registrations}</b><span>Offline registrations</span></a>
+    <a class="card stat" href="/admin/registrations"><b>{present}</b><span>Checked in</span></a>
+    <a class="card stat" href="/admin/payments"><b>{pendingUpi}</b><span>UPI payments to review</span></a>
+    <a class="card stat" href="/admin/learners"><b>{online}</b><span>Online learners</span></a>
+    <div class="card stat"><b>{certs}</b><span>Certificates issued</span></div>
+    <a class="card stat" href="/admin/courses"><b>{courses}</b><span>Courses</span></a>
+  </div>
+
+  <h2 class="h3">Upcoming batches</h2>
+  {upcoming.length === 0 ? (
+    <p class="muted">No upcoming batches. <a href="/admin/courses">Add one from a course.</a></p>
+  ) : (
+    <ul class="list" role="list">
+      {upcoming.map((b) => (
+        <li class="card row row--between">
+          <span class="stack-sm">
+            <strong>{one<any>(b.academy_courses)?.title}</strong>
+            <span class="small muted">{batchWhen(b)} · {b.kind === 'live' ? 'Live online' : b.venue}</span>
+          </span>
+          <span class="row">
+            <span class="badge">{b.status}</span>
+            <a class="btn btn--sm" href={`/admin/registrations?batch=${b.id}`}>Check-in →</a>
+          </span>
+        </li>
+      ))}
+    </ul>
+  )}
+</Admin>
 
 <style>
-  .page-head { padding-block: clamp(2rem, 6vw, 3.5rem) 1rem; }
+  .stats { grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: 0.75rem; }
+  .stats a { text-decoration: none; color: inherit; }
+  .stats .card { padding: 1rem 1.1rem; }
+  .h3 { font-size: 1.2rem; margin: 0.5rem 0 0; }
+  .list { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.6rem; }
+  .list .card { padding: 0.9rem 1rem; }
 </style>

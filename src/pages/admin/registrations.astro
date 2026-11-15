@@ -1,198 +1,204 @@
 ---
-import Base from '../../layouts/Base.astro';
-import { SUPABASE_URL } from 'astro:env/server';
+import Admin from '../../layouts/Admin.astro';
 import { serviceDb } from '../../lib/supabase';
+import { one, batchWhen } from '../../lib/http';
+import { certificatePublicUrl } from '../../lib/certificates';
 
 export const prerender = false;
 
 const db = serviceDb();
+let batches: any[] = [];
 let rows: any[] = [];
-let unconfigured = false;
+let batch: any = null;
 
 if (db) {
-  const { data } = await db
-    .from('academy_enrollments')
-    .select(`
-      id, name, email, phone, reg_code, status, attended_at, created_at,
-      academy_batches (venue, starts_at, ends_at, status, fee),
-      academy_courses (title, slug),
-      academy_certificates (serial, verify_code, pdf_path, issued_at, emailed_at)
-    `)
-    .order('created_at', { ascending: false });
-  rows = data ?? [];
-} else {
-  unconfigured = true;
+  const { data: b } = await db
+    .from('academy_batches')
+    .select('id, kind, starts_at, ends_at, venue, fee, capacity, status, course_id, academy_courses (title)')
+    .order('starts_at', { ascending: false });
+  batches = b ?? [];
+  const wanted = Astro.url.searchParams.get('batch');
+  // default: the batch closest to now (today's event first)
+  const now = Date.now();
+  batch =
+    batches.find((x) => x.id === wanted) ??
+    [...batches].sort((x, y) => Math.abs(new Date(x.starts_at).getTime() - now) - Math.abs(new Date(y.starts_at).getTime() - now))[0] ??
+    null;
+
+  if (batch) {
+    const { data } = await db
+      .from('academy_enrollments')
+      .select(
+        `id, name, email, phone, reg_code, status, source, payment_status, payment_method, amount, attended_at, created_at,
+         academy_certificates (serial, pdf_path, emailed_at, revoked)`
+      )
+      .eq('batch_id', batch.id)
+      .order('name', { ascending: true });
+    rows = data ?? [];
+  }
 }
 
-const pdfHost = (SUPABASE_URL ?? '').replace(/\/$/, '');
-function pdfUrl(path: string | null) {
-  return path ? `${pdfHost}/storage/v1/object/public/academy-certificates/${encodeURIComponent(path)}` : null;
-}
-
-function batchKey(b: any) {
-  return b?.starts_at ? new Date(b.starts_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Batch';
-}
-function attended(a: string | null) {
-  return a ? new Date(a).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
-}
+const active = rows.filter((r) => r.status !== 'cancelled');
+const stats = {
+  registered: active.length,
+  present: active.filter((r) => r.attended_at).length,
+  paid: active.filter((r) => r.payment_status === 'received').length,
+  certs: active.filter((r) => one(r.academy_certificates)).length,
+};
+const cash = active.filter((r) => r.payment_status === 'received').reduce((s, r) => s + Number(r.amount ?? batch?.fee ?? 0), 0);
+const pendingCerts = active.filter((r) => r.attended_at && !one(r.academy_certificates)).length;
+const label = (b: any) => `${one<any>(b.academy_courses)?.title ?? b.course_id} · ${batchWhen(b)}${b.kind === 'live' ? ' · live' : ''}`;
+const body = (o: object) => JSON.stringify(o);
+const api = '/api/admin/enrollments';
 ---
-<Base
-  title="Admin — registrations · Growtick Academy"
-  description="Check in attendees and issue certificates for the GST batch."
-  noindex={true}
->
-  <section class="section page-head">
-    <div class="wrap">
-      <p class="overline">Admin · Registrations</p>
-      <h1>Batch registrations &amp; check-in</h1>
-      <p class="lead">Mark attendees present as they arrive, then issue their Certificate of Appreciation. Certificates are generated as PDFs and emailed automatically.</p>
-    </div>
-  </section>
-
-  {unconfigured ? (
-    <section class="section">
-      <div class="wrap">
-        <div class="card">
-          <p>Admin is not configured yet. Set <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code> in the Cloudflare dashboard (or <code>.dev.vars</code> locally).</p>
-        </div>
-      </div>
-    </section>
+<Admin title="Registrations" heading="Registrations & check-in" lead="Search by name, mobile or code. Tap Present when someone arrives and ₹ when they pay.">
+  {!db ? (
+    <div class="card"><p>Set <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code> to use the admin.</p></div>
+  ) : !batch ? (
+    <div class="card"><p>No batches yet. <a href="/admin/courses">Create a course and batch</a> first.</p></div>
   ) : (
     <>
-      <section class="section">
-        <div class="wrap">
-          <input
-            id="admin-search"
-            type="text"
-            placeholder="Filter by name, email, phone or registration code…"
-            style="width:100%; min-height:44px; padding:0.65rem 0.8rem; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface-alt); color:var(--text); font:inherit; margin-bottom:1rem;"
-          />
-          <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
-            <thead>
-              <tr style="text-align:left; color:var(--muted); font-size:0.8rem;">
-                <th style="padding:0.6rem 0.4rem; border-bottom:2px solid var(--border);">Attendee</th>
-                <th style="padding:0.6rem 0.4rem; border-bottom:2px solid var(--border);">Batch</th>
-                <th style="padding:0.6rem 0.4rem; border-bottom:2px solid var(--border);">Reg code</th>
-                <th style="padding:0.6rem 0.4rem; border-bottom:2px solid var(--border);">Checked in</th>
-                <th style="padding:0.6rem 0.4rem; border-bottom:2px solid var(--border);">Certificate</th>
-                <th style="padding:0.6rem 0.4rem; border-bottom:2px solid var(--border); text-align:right;">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r: any) => {
-                const cert = r.academy_certificates?.[0];
-                const batch = r.academy_batches;
-                const course = r.academy_courses;
-                const done = !!r.attended_at;
-                const issued = !!cert;
-                return (
-                  <tr id={`row-${r.id}`} style="border-bottom:1px solid var(--border);">
-                    <td style="padding:0.7rem 0.4rem;">
-                      <div style="font-weight:700; color:var(--ink);">{r.name}</div>
-                      <div style="font-size:0.8rem; color:var(--muted);">{r.email}</div>
-                      <div style="font-size:0.8rem; color:var(--muted);">{r.phone ?? '—'}</div>
-                    </td>
-                    <td style="padding:0.7rem 0.4rem; font-size:0.85rem; color:var(--muted);">
-                      {course?.[0]?.title} · {batchKey(batch?.[0])}
-                    </td>
-                    <td style="padding:0.7rem 0.4rem; font-weight:700; letter-spacing:0.06em;">{r.reg_code}</td>
-                    <td style="padding:0.7rem 0.4rem;">
-                      {done ? (
-                        <span style="color:var(--purple-deep); font-weight:700;">✓ {attended(r.attended_at)}</span>
-                      ) : (
-                        <span style="color:var(--muted);">—</span>
-                      )}
-                    </td>
-                    <td style="padding:0.7rem 0.4rem;">
-                      {issued ? (
-                        <>
-                          <div style="font-size:0.85rem; color:var(--purple-deep); font-weight:700;">Issued</div>
-                          <div style="font-size:0.8rem; color:var(--muted); letter-spacing:0.06em;">{cert.serial}</div>
-                          <a href={pdfUrl(cert.pdf_path)} target="_blank" rel="noopener" style="font-size:0.8rem; color:var(--purple-deep); text-decoration:underline;">PDF</a>
-                        </>
-                      ) : (
-                        <span style="color:var(--muted);">Not issued</span>
-                      )}
-                    </td>
-                    <td style="padding:0.7rem 0.4rem; text-align:right;">
-                      {!done ? (
-                        <button
-                          data-action="checkin"
-                          data-id={r.id}
-                          class="btn btn--ghost btn--sm"
-                          style="padding:0.35rem 0.8rem; font-size:0.8rem;"
-                        >
-                          Check in
-                        </button>
-                      ) : (
-                        <span style="font-size:0.8rem; color:var(--purple-deep); font-weight:700;">Checked in</span>
-                      )}
-                      {!issued ? (
-                        <button
-                          data-action="issue"
-                          data-id={r.id}
-                          class="btn btn--sm"
-                          style={done ? 'margin-left:0.4rem; padding:0.35rem 0.8rem; font-size:0.8rem;' : 'margin-left:0.4rem; padding:0.35rem 0.8rem; font-size:0.8rem; opacity:0.5;'}
-                          disabled={!done}
-                        >
-                          Issue certificate
-                        </button>
-                      ) : (
-                        <a href={pdfUrl(cert.pdf_path)} target="_blank" rel="noopener" class="btn btn--ghost btn--sm" style="padding:0.35rem 0.8rem; font-size:0.8rem;">Re-send PDF</a>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {rows.length === 0 && (
-                <tr><td style="padding:1rem; text-align:center; color:var(--muted);" colspan="6">No registrations yet.</td></tr>
+      <form method="get" class="row">
+        <label class="field" style="flex:1; min-width:min(100%, 18rem);">
+          <span>Batch</span>
+          <select name="batch" data-autosubmit>
+            {batches.map((b) => (
+              <option value={b.id} selected={b.id === batch.id}>{label(b)} ({b.status})</option>
+            ))}
+          </select>
+        </label>
+        <noscript><button class="btn btn--sm" type="submit">Show</button></noscript>
+      </form>
+
+      <div class="grid stats">
+        <div class="card stat"><b>{stats.registered}{batch.capacity > 0 ? <small class="muted"> / {batch.capacity}</small> : null}</b><span>Registered</span></div>
+        <div class="card stat"><b>{stats.present}</b><span>Present</span></div>
+        <div class="card stat"><b>{stats.paid}</b><span>Paid · ₹{cash}</span></div>
+        <div class="card stat"><b>{stats.certs}</b><span>Certificates issued</span></div>
+      </div>
+
+      <div class="row">
+        <a class="btn btn--ghost btn--sm" href={`/api/admin/export?batch=${batch.id}`}>Export CSV</a>
+        <button
+          class="btn btn--sm"
+          data-api={api}
+          data-body={body({ action: 'issue_batch', batch_id: batch.id })}
+          data-confirm={`Issue and email certificates to ${pendingCerts} attendee(s) marked present?`}
+          data-keep
+          disabled={pendingCerts === 0}
+        >Issue certificates to all present ({pendingCerts})</button>
+        {batch.kind === 'live' && (
+          <button class="btn btn--ghost btn--sm" data-api={api} data-body={body({ action: 'remind', batch_id: batch.id })} data-confirm="Email a class reminder to everyone in this batch?" data-keep>Send reminder email</button>
+        )}
+      </div>
+
+      <details class="card">
+        <summary>Add a walk-in</summary>
+        <form data-api={api} class="form-grid">
+          <input type="hidden" name="action" value="walkin" />
+          <input type="hidden" name="batch_id" value={batch.id} />
+          <label class="field"><span>Full name</span><input name="name" required minlength="2" maxlength="80" autocomplete="off" /></label>
+          <label class="field"><span>Email</span><input name="email" type="email" required autocomplete="off" /></label>
+          <label class="field"><span>Mobile</span><input name="phone" type="tel" inputmode="numeric" placeholder="9876543210" /></label>
+          <div class="span-all row">
+            <label class="check"><input type="checkbox" name="present" checked /> Present now</label>
+            <label class="check"><input type="checkbox" name="paid" checked /> ₹{batch.fee} received</label>
+            <label class="check"><input type="checkbox" name="send_email" /> Email confirmation</label>
+          </div>
+          <div class="span-all row"><button class="btn btn--sm" type="submit">Add walk-in</button><output class="form-msg"></output></div>
+        </form>
+      </details>
+
+      <details class="card">
+        <summary>Import from CSV (Google Form export)</summary>
+        <p class="small muted">Needs a header row with an <strong>email</strong> column; <strong>name</strong> and <strong>mobile/phone</strong> columns are picked up automatically. Existing registrations are skipped.</p>
+        <p class="row small"><input type="file" accept=".csv,text/csv" id="csv-file" /></p>
+        <form data-api={api} data-confirm="Import these rows into this batch?" class="stack-sm">
+          <input type="hidden" name="action" value="import" />
+          <input type="hidden" name="batch_id" value={batch.id} />
+          <label class="field"><span>CSV contents</span><textarea name="csv" id="csv-text" rows="6" required placeholder="Timestamp,Full name,Email address,Mobile number&#10;..."></textarea></label>
+          <label class="check"><input type="checkbox" name="send_email" /> Email each person their registration code</label>
+          <div class="row"><button class="btn btn--sm" type="submit">Import</button><output class="form-msg"></output></div>
+        </form>
+      </details>
+
+      <input class="input" type="search" placeholder="Search name, mobile, email or code…" data-filter="#reg-list" autofocus />
+
+      <ul id="reg-list" class="reg-list" role="list">
+        {rows.map((r) => {
+          const cert = one<any>(r.academy_certificates);
+          const cancelled = r.status === 'cancelled';
+          const pdf = certificatePublicUrl(cert?.pdf_path);
+          return (
+            <li class="card reg" data-row={`${r.name} ${r.email} ${r.phone ?? ''} ${r.reg_code}`} data-cancelled={cancelled ? '' : undefined}>
+              <div class="reg__who">
+                <strong>{r.name}</strong>
+                <span class="small muted">{r.phone ?? 'no mobile'} · {r.email}</span>
+                <span class="row small">
+                  <span class="mono">{r.reg_code}</span>
+                  {r.source !== 'web' && <span class="badge">{r.source}</span>}
+                  {cancelled && <span class="badge badge--bad">cancelled</span>}
+                  {r.attended_at && <span class="badge badge--ok">present {new Date(r.attended_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })}</span>}
+                  {r.payment_status === 'received' && <span class="badge badge--ok">₹{r.amount ?? batch.fee} paid</span>}
+                  {cert && <span class="badge">{cert.serial}{cert.emailed_at ? ' · emailed' : ''}</span>}
+                </span>
+              </div>
+              {!cancelled ? (
+                <div class="reg__actions row">
+                  {r.attended_at ? (
+                    <button class="btn btn--ghost btn--sm" data-api={api} data-body={body({ action: 'checkin', enrollment_id: r.id, undo: true })} data-confirm="Undo check-in?">Undo present</button>
+                  ) : (
+                    <button class="btn btn--sm" data-api={api} data-body={body({ action: 'checkin', enrollment_id: r.id })}>Present</button>
+                  )}
+                  {r.payment_status === 'received' ? (
+                    <button class="btn btn--ghost btn--sm" data-api={api} data-body={body({ action: 'cash', enrollment_id: r.id, received: false })} data-confirm="Mark payment as not received?">Undo ₹</button>
+                  ) : (
+                    <button class="btn btn--alt btn--sm" data-api={api} data-body={body({ action: 'cash', enrollment_id: r.id, received: true })}>₹{batch.fee} received</button>
+                  )}
+                  {cert ? (
+                    <>
+                      {pdf && <a class="btn btn--ghost btn--sm" href={pdf} target="_blank" rel="noopener">PDF</a>}
+                      <button class="btn btn--ghost btn--sm" data-api={api} data-body={body({ action: 'resend', enrollment_id: r.id })} data-keep>Resend</button>
+                    </>
+                  ) : r.attended_at ? (
+                    <button class="btn btn--ghost btn--sm" data-api={api} data-body={body({ action: 'issue', enrollment_id: r.id })}>Issue certificate</button>
+                  ) : null}
+                  <button class="btn btn--ghost btn--sm danger" data-api={api} data-body={body({ action: 'cancel', enrollment_id: r.id })} data-confirm={`Cancel ${r.name}'s registration?`}>Cancel</button>
+                </div>
+              ) : (
+                <div class="reg__actions row">
+                  <button class="btn btn--ghost btn--sm" data-api={api} data-body={body({ action: 'cancel', enrollment_id: r.id, undo: true })}>Restore</button>
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+            </li>
+          );
+        })}
+        {rows.length === 0 && <li class="card"><p class="muted">No registrations for this batch yet.</p></li>}
+      </ul>
     </>
   )}
-</Base>
+</Admin>
 
 <script>
-  (() => {
-    const search = document.getElementById('admin-search');
-    const rows = document.querySelectorAll('tbody tr');
-
-    if (search instanceof HTMLInputElement) {
-      search.addEventListener('input', () => {
-        const q = (search.value ?? '').toLowerCase();
-        for (const r of rows) {
-          if (!(r instanceof HTMLElement)) continue;
-          const text = r.textContent?.toLowerCase() ?? '';
-          r.style.display = text.includes(q) ? '' : 'none';
-        }
-      });
-    }
-
-    document.querySelectorAll('[data-action]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const id = btn.getAttribute('data-id');
-        const kind = btn.getAttribute('data-action');
-        const path = kind === 'checkin' ? '/api/admin/checkin' : '/api/certificates/issue';
-        const res = await fetch(path, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ enrollment_id: id }),
-        });
-        const ok = await res.json();
-        if (ok && ok.ok) {
-          location.reload();
-        } else {
-          alert(ok && ok.error ? ok.error : 'Something went wrong.');
-        }
-      });
+  const file = document.getElementById('csv-file');
+  const text = document.getElementById('csv-text');
+  if (file instanceof HTMLInputElement && text instanceof HTMLTextAreaElement) {
+    file.addEventListener('change', async () => {
+      const f = file.files?.[0];
+      if (f) text.value = await f.text();
     });
-  })();
+  }
 </script>
 
 <style>
-  .page-head { padding-block: clamp(2rem, 6vw, 3.5rem) 1rem; }
-  th { text-align: left; }
+  .stats { grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); gap: 0.75rem; }
+  .stats .card { padding: 1rem 1.1rem; }
+  .reg-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.6rem; }
+  .reg { display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; justify-content: space-between; align-items: center; padding: 0.9rem 1rem; }
+  .reg[hidden] { display: none; }
+  .reg[data-cancelled] { opacity: 0.6; }
+  .reg__who { display: grid; gap: 0.2rem; min-width: min(100%, 16rem); flex: 1; }
+  .reg__actions { gap: 0.4rem; }
+  .danger { color: var(--accent); }
+  button[disabled] { opacity: 0.5; cursor: not-allowed; }
 </style>

@@ -1,5 +1,6 @@
 ---
-interface Props {}
+const user = Astro.locals.user;
+const isAdmin = Astro.locals.isAdmin;
 ---
 <header>
   <div class="wrap hdr">
@@ -11,10 +12,21 @@ interface Props {}
     <nav class="hdr-nav">
       <a href="/">Home</a>
       <a href="/courses">Courses</a>
+      <a href="/verify">Verify</a>
+      <a href="/help">Help</a>
+      {user && <a href="/dashboard">My learning</a>}
+      {isAdmin && <a href="/admin">Admin</a>}
     </nav>
 
     <div class="hdr-actions">
-      <a class="btn btn--ghost btn--sm" href="https://growtick.in" target="_blank" rel="noopener">Visit growtick.in</a>
+      {user ? (
+        <form method="post" action="/api/auth/signout" class="hdr-signout">
+          <a class="btn btn--ghost btn--sm hdr-mobile" href="/dashboard">My learning</a>
+          <button class="btn btn--ghost btn--sm" type="submit">Sign out</button>
+        </form>
+      ) : (
+        <a class="btn btn--ghost btn--sm" href="/login">Sign in</a>
+      )}
       <button id="theme-toggle" class="btn btn--ghost btn--sm" aria-label="Toggle dark theme" type="button">
         <span class="sr-only">Toggle dark theme</span>
         <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
@@ -48,7 +60,9 @@ interface Props {}
   .hdr-actions { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
   @media (min-width: 768px) {
     .hdr-nav { display: flex; }
+    .hdr-mobile { display: none; }
   }
+  .hdr-signout { display: flex; gap: 0.5rem; margin: 0; }
   .btn--ghost.btn--sm { min-height: 38px; padding: 0.45rem 0.9rem; font-size: 0.9rem; }
   .theme-icon { width: 1.1rem; height: 1.1rem; }
   .theme-icon-moon { display: none; }
@@ -62,7 +76,6 @@ interface Props {}
     const root = document.documentElement;
     if (!btn) return;
     const set = (t: string) => { root.dataset.theme = t; try { localStorage.setItem('theme', t); } catch (e) {} };
-    set(root.dataset.theme === 'dark' ? 'light' : 'dark');
     btn.addEventListener('click', () => set(root.dataset.theme === 'dark' ? 'light' : 'dark'));
   })();
 </script>

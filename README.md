@@ -13,7 +13,9 @@ Offline-first course platform for Growtick: people browse upcoming offline batch
 ## Project status
 
 **Phase 1 — offline flow** (usable for 15 Nov): catalogue, GST course page, offline registration with seat check, confirmation page, registration email, certificate verification page, admin guard structure.  
-**Phase 2 — online learning**: learner dashboard, recorded lessons, quizzes, UPI pay/approve, automatic certificates (not yet built).
+**Phase 2 — online learning**: sign-in, learner dashboard, recorded lessons, notes/downloads, server-graded quizzes, live classes, UPI pay/approve, automatic certificates.
+
+Guides: **`ADMIN_GUIDE.md`** for admins, **`/help`** on the site for learners. Status and setup checklist: `PROGRESS.md`.
 
 See `IMPLEMENTAION_PLAN_V1.md` for the full plan, data model and build order.
 
@@ -69,7 +71,10 @@ Local stack: `npx supabase start` then `npx supabase db reset` and `psql -f supa
 - `/registered/[reg_code]` — confirmation with batch details and add-to-calendar
 - `/verify` and `/verify/[code]` — certificate authenticity check
 - `/login`, `/privacy`, `/terms`
-- `/admin`, `/dashboard`, `/learn`, `/pay` — session-guarded (Phase 2)
+- `/help` — learner user guide
+- `/courses/[slug]/poster` — printable poster
+- `/dashboard`, `/learn/[slug]`, `/pay/[id]` — signed-in learners
+- `/admin/*` — admins (registrations & check-in, UPI payments, courses & curriculum, learners, email log, settings)
 
 ## Project layout
 

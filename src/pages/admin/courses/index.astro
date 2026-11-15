@@ -1,0 +1,52 @@
+---
+import Admin from '../../../layouts/Admin.astro';
+import { serviceDb } from '../../../lib/supabase';
+import { many } from '../../../lib/http';
+
+export const prerender = false;
+
+const db = serviceDb();
+const { data } = db
+  ? await db.from('academy_courses').select('slug, title, delivery, status, online_price, academy_batches (id, status), academy_modules (id)').order('created_at', { ascending: false })
+  : { data: [] as any[] };
+const courses = data ?? [];
+---
+<Admin title="Courses" lead="Create courses, schedule offline or live batches and build the online curriculum.">
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Course</th><th>Delivery</th><th>Status</th><th>Batches</th><th>Modules</th><th></th></tr></thead>
+      <tbody>
+        {courses.map((c: any) => (
+          <tr>
+            <td><strong>{c.title}</strong><div class="small muted mono">{c.slug}</div></td>
+            <td>{c.delivery}{c.delivery !== 'offline' ? ` · ${Number(c.online_price ?? 0) > 0 ? '₹' + c.online_price : 'free'}` : ''}</td>
+            <td><span class={c.status === 'published' ? 'badge badge--ok' : 'badge'}>{c.status}</span></td>
+            <td>{many(c.academy_batches).filter((b: any) => b.status === 'open').length} open / {many(c.academy_batches).length}</td>
+            <td>{many(c.academy_modules).length}</td>
+            <td class="row"><a class="btn btn--sm" href={`/admin/courses/${c.slug}`}>Edit</a><a class="btn btn--ghost btn--sm" href={`/courses/${c.slug}`}>View</a></td>
+          </tr>
+        ))}
+        {courses.length === 0 && <tr><td colspan="6" class="muted">No courses yet.</td></tr>}
+      </tbody>
+    </table>
+  </div>
+
+  <details class="card" open={courses.length === 0}>
+    <summary>New course</summary>
+    <form data-api="/api/admin/courses" class="form-grid">
+      <input type="hidden" name="action" value="save_course" />
+      <label class="field"><span>Title</span><input name="title" required minlength="3" /></label>
+      <label class="field"><span>Slug (URL)</span><input name="slug" required pattern="[a-z0-9\-]{2,60}" placeholder="tally-prime-basics" /></label>
+      <label class="field"><span>Delivery</span>
+        <select name="delivery"><option value="offline">Offline</option><option value="online">Online</option><option value="both">Offline + online</option></select>
+      </label>
+      <label class="field"><span>Online price (₹, 0 = free)</span><input name="online_price" type="number" min="0" value="0" /></label>
+      <label class="field"><span>Certificate</span>
+        <select name="certificate_kind"><option value="appreciation">Appreciation (attendance)</option><option value="completion">Completion (lessons + quiz)</option></select>
+      </label>
+      <label class="field"><span>Quiz pass mark (%)</span><input name="pass_mark" type="number" min="0" max="100" value="70" /></label>
+      <input type="hidden" name="status" value="draft" />
+      <div class="span-all row"><button class="btn btn--sm" type="submit">Create draft course</button><output class="form-msg"></output></div>
+    </form>
+  </details>
+</Admin>

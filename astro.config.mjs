@@ -28,7 +28,15 @@ export default defineConfig({
         "manifest-src 'self'",
       ],
       scriptDirective: { resources: ["'self'", 'https://challenges.cloudflare.com'] },
-      styleDirective: { resources: ["'self'"] },
+      // `style="…"` attributes are used across pages (progress bars, layout
+      // tweaks). Allow attributes only (style-src-attr); <style> elements stay
+      // hash-locked.
+      styleDirective: {
+        resources: [
+          { resource: "'self'", kind: 'element' },
+          { resource: "'unsafe-inline'", kind: 'attribute' },
+        ],
+      },
     },
   },
   env: {
