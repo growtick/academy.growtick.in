@@ -6,11 +6,13 @@ Admin home: **https://academy.growtick.in/admin**
 
 ---
 
-## 1. Getting admin access
+## 1. Signing in
 
-1. Go to **https://academy.growtick.in/login**, enter your email and sign in with the link or the 6-digit code from the email.
-2. Send your email to the site owner. They run `node scripts/make-admin.js your@email` once to give you admin rights.
-3. Sign in again. An **Admin** link appears in the top menu. If you see *"Forbidden: this account is not an academy admin"*, step 2 hasn't been done yet.
+1. Open **https://academy.growtick.in/admin**. You're taken to the sign-in page with the admin email filled in.
+2. Enter the password and click **Sign in**. No email or code is involved.
+3. Stay signed in on the check-in phone. Don't tap **Sign out** on event day.
+
+Other admins: they create an account at **/login** (or you set a password for them in **Settings → Reset a learner's password**), then you use **Settings → Admins → Make admin**.
 
 The admin menu has: **Overview · Registrations & check-in · UPI payments · Courses · Learners · Email log · Settings**.
 
@@ -122,6 +124,8 @@ Title, subtitle, description, outcomes and highlights (one per line), cover imag
 - **Learners**: every online enrolment with progress %, best quiz score, live attendance (**Mark attended** if someone attended but joined another way) and certificate actions. **Export CSV** for reports.
 - **Email log**: every email the site sent (registrations, certificates, payments, reminders), with status. A *failed* row shows the error; use *Resend* on the person if needed.
 - **Settings**:
+  - *Reset a learner's password*: for "I forgot my password" messages. Type their email and a new password, then tell them the password.
+  - *Admins*: make or remove admins.
   - *Certificate signatory name*: printed on every new certificate.
   - *UPI ID*, *payee name* and **Upload UPI QR image**: shown on the payment page. **Set these before selling any paid online course.**
   - Contact phone / WhatsApp / Instagram links.
@@ -138,6 +142,7 @@ Title, subtitle, description, outcomes and highlights (one per line), cover imag
 | Certificate not received | Registrations → **Resend**, or send them the **PDF** link directly. |
 | Learner paid but course still locked | UPI payments → find them → **Approve**. |
 | Online learner finished but no certificate | Learners → check what's missing in the progress column → **Issue manually** if appropriate. |
+| Learner forgot their password | Settings → **Reset a learner's password**, then send them the new one. |
 | Batch shows the wrong time | Times are entered and shown in IST. Edit the batch under Courses. |
 
 Learner-facing help (share with students): **https://academy.growtick.in/help**

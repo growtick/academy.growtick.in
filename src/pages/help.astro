@@ -6,7 +6,7 @@ const sections = [
   ['online', 'Learn online'],
   ['payment', 'Paying by UPI'],
   ['certificates', 'Certificates'],
-  ['account', 'Signing in & your account'],
+  ['account', 'Your account'],
   ['faq', 'Common questions'],
 ];
 ---
@@ -44,7 +44,7 @@ const sections = [
         <section id="online" class="card">
           <h2>Learn online</h2>
           <ol class="steps-list">
-            <li>Open the course and look for the <strong>Learn online</strong> card. Tap <strong>Sign in to enrol</strong> (see <a href="#account">signing in</a>).</li>
+            <li>Open the course and look for the <strong>Learn online</strong> card. Sign in, or create an account (see <a href="#account">Your account</a>).</li>
             <li>Tap <strong>Enrol online</strong>. Free courses unlock straight away. Paid courses take you to the payment page (see <a href="#payment">Paying by UPI</a>).</li>
             <li>Once unlocked, open the course from <a href="/dashboard">My learning</a>. The lesson list is on the left (above the lesson on a phone).</li>
             <li>Lesson types:
@@ -85,13 +85,13 @@ const sections = [
         </section>
 
         <section id="account" class="card">
-          <h2>Signing in &amp; your account</h2>
+          <h2>Your account</h2>
           <ol class="steps-list">
-            <li>Go to <a href="/login">Sign in</a> and enter your email.</li>
-            <li>We email you a sign-in link and a one-time code. Click the link, or type the code on the sign-in page (handy if the email opened on another device).</li>
-            <li>There's no password to remember.</li>
+            <li>Go to <a href="/login?mode=signup">Create an account</a>. Enter your full name (it's printed on your certificates), email and a password of your choice (8+ characters).</li>
+            <li>That's it. No verification email. Next time, sign in at <a href="/login">Sign in</a> with your email and password.</li>
+            <li>Forgot your password? Message us on <a href="https://wa.me/919513059059">WhatsApp</a> from your registered number and we'll reset it.</li>
           </ol>
-          <p>Sign in with the <strong>same email you used to register</strong> and your offline registrations and certificates appear in <a href="/dashboard">My learning</a> automatically.</p>
+          <p>Use the <strong>same email you registered for a batch with</strong> and your offline registrations and certificates appear in <a href="/dashboard">My learning</a> automatically.</p>
         </section>
 
         <section id="faq" class="card">
@@ -100,7 +100,7 @@ const sections = [
           <details><summary>It says "already registered".</summary><p>That email is already booked for this batch. Use the <strong>View your registration</strong> link shown to see your code.</p></details>
           <details><summary>The batch is full.</summary><p>Message us on WhatsApp to join the waiting list, or check <a href="/courses">Courses</a> for another batch.</p></details>
           <details><summary>My name is wrong on the certificate.</summary><p>Message us with your certificate serial number and the correct spelling and we'll reissue it.</p></details>
-          <details><summary>The sign-in link says it expired.</summary><p>Links and codes work once and expire after a short time. Request a new one from the sign-in page.</p></details>
+          <details><summary>I forgot my password.</summary><p>Message us on WhatsApp with your registered email and we'll set a new one for you.</p></details>
         </section>
 
         <section class="card contact">

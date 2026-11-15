@@ -151,7 +151,7 @@ const feeText = (b: any) => (Number(b.fee ?? 0) > 0 ? `₹${Number(b.fee)}${b.pa
                 <p class="form-msg" data-kind="error"></p>
               </form>
             ) : (
-              <a class="btn" href={`/login?next=${encodeURIComponent(`/courses/${course.slug}`)}`}>Sign in to enrol</a>
+              <a class="btn" href={`/login?next=${encodeURIComponent(`/courses/${course.slug}`)}`}>Sign in or create an account to enrol</a>
             )}
           </div>
         )}

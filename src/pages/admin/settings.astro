@@ -26,10 +26,24 @@ const s = await getSettings();
     <div class="row"><button class="btn btn--ghost btn--sm" type="submit">Upload QR</button><output class="form-msg"></output></div>
   </form>
 
-  <div class="card stack-sm small">
-    <strong>Admins</strong>
-    <p>To make someone an admin, ask them to sign in once at <a href="/login">/login</a>, then run <code>node scripts/make-admin.js their@email</code> from the project folder.</p>
-  </div>
+  <form data-api="/api/admin/users" class="card form-grid" data-keep>
+    <strong class="span-all">Reset a learner's password</strong>
+    <p class="span-all small muted">For "forgot password" requests. Creates the account if it doesn't exist. Tell the learner their new password; they can sign in straight away.</p>
+    <input type="hidden" name="action" value="set_password" />
+    <label class="field"><span>Email</span><input type="email" name="email" required autocomplete="off" /></label>
+    <label class="field"><span>New password (8+ characters)</span><input name="password" required minlength="8" autocomplete="off" /></label>
+    <div class="span-all row"><button class="btn btn--sm" type="submit">Set password</button><output class="form-msg"></output></div>
+  </form>
+
+  <form data-api="/api/admin/users" class="card form-grid" data-keep>
+    <strong class="span-all">Admins</strong>
+    <p class="span-all small muted">The person needs an account first (they create one at /login, or set a password for them above).</p>
+    <label class="field"><span>Email</span><input type="email" name="email" required autocomplete="off" /></label>
+    <label class="field"><span>Action</span>
+      <select name="action"><option value="make_admin">Make admin</option><option value="remove_admin">Remove admin</option></select>
+    </label>
+    <div class="span-all row"><button class="btn btn--sm" type="submit">Apply</button><output class="form-msg"></output></div>
+  </form>
 </Admin>
 
 <style>
