@@ -9,8 +9,11 @@ Reference log of what has been done and what remains. Plan: `IMPLEMENTAION_PLAN_
 
 ## Deployment (live since 15 Nov 2026)
 
-- Deployed as the **Cloudflare Worker `growtick-academy`** on custom domain **academy.growtick.in** (replaced the old "Coming Soon" page). It is **not** a Pages project, so `git push` does **not** deploy.
-- Deploy: `npm run deploy` (= `astro build && wrangler deploy`), logged in to the info.growtick account (`npx wrangler login`).
+- Deployed as the **Cloudflare Worker `growtick-academy`** on custom domain **academy.growtick.in** (replaced the old "Coming Soon" page). It is **not** a Pages project.
+- **CI/CD (GitHub Actions, `.github/workflows/ci-cd.yml`):** every push/PR is type-checked and built; every push to `main` auto-deploys with `wrangler deploy` and smoke-tests `/courses`.
+  - ⏳ One-time setup: add repo secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` and repo variables `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`, `PUBLIC_TURNSTILE_SITE_KEY` (see README → Deployment). Until then the deploy job fails with a clear "not set" error.
+  - Migrations are not run by CI; push them with `npx supabase db push --remote` first.
+- Manual deploy fallback: `npm run deploy` (= `astro build && wrangler deploy`), logged in to the info.growtick account (`npx wrangler login`).
 - Worker secrets set: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `RESEND_FROM`. Change with `npx wrangler secret put NAME`.
 - **Missing: `TURNSTILE_SECRET_KEY`** (empty in .env/.dev.vars), so the registration spam check is skipped. Add it with `npx wrangler secret put TURNSTILE_SECRET_KEY` (no redeploy needed).
 - Production builds always link to https://academy.growtick.in (`src/lib/site.ts`), even if `.env` says localhost.

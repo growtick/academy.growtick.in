@@ -1,0 +1,103 @@
+# CI/CD for academy.growtick.in
+#
+# - Every push (any branch) and every pull request: type-check + production build.
+# - Every push to `main` (and manual runs): after CI passes, deploy the
+#   `growtick-academy` Cloudflare Worker (academy.growtick.in) with wrangler.
+#
+# Required GitHub configuration (Settings → Secrets and variables → Actions):
+#   Secrets:   CLOUDFLARE_API_TOKEN   (template "Edit Cloudflare Workers")
+#              CLOUDFLARE_ACCOUNT_ID
+#   Variables: PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, PUBLIC_TURNSTILE_SITE_KEY
+#              (browser-safe values inlined into the build; see .env.example)
+# Worker runtime secrets (SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY, ...) stay in
+# Cloudflare (`npx wrangler secret put NAME`) and are untouched by deploys.
+
+name: CI/CD
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '24'
+  PUBLIC_SITE_URL: https://academy.growtick.in
+  PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
+  PUBLIC_SUPABASE_ANON_KEY: ${{ vars.PUBLIC_SUPABASE_ANON_KEY }}
+  PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.PUBLIC_TURNSTILE_SITE_KEY }}
+  ASTRO_TELEMETRY_DISABLED: '1'
+
+jobs:
+  ci:
+    name: Check & build
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ci-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type-check (astro check)
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+  deploy:
+    name: Deploy to Cloudflare
+    needs: ci
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://academy.growtick.in
+    # Never run two deploys at once; a newer commit waits for the running one.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check deploy secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=0
+          for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID PUBLIC_SUPABASE_URL PUBLIC_SUPABASE_ANON_KEY; do
+            if [ -z "${!v}" ]; then echo "::error::$v is not set in GitHub repo secrets/variables"; missing=1; fi
+          done
+          exit $missing
+
+      - name: Build & deploy (astro build && wrangler deploy)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: npm run deploy -- --message "GitHub ${{ github.sha }}"
+
+      - name: Smoke test
+        run: |
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://academy.growtick.in/courses) && [ "$code" = "200" ] && { echo "OK ($code)"; exit 0; }
+            echo "Attempt $i: HTTP $code, retrying..."; sleep 5
+          done
+          echo "::error::academy.growtick.in/courses did not return 200 after deploy"; exit 1

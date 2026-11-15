@@ -92,7 +92,24 @@ src/pages/api/         /api/register (offline registration), /api/auth/otp
 
 ## Deployment
 
-`npm run deploy` builds and deploys the `growtick-academy` Cloudflare Worker, served on `academy.growtick.in`. `git push` alone does not deploy. Secrets: `npx wrangler secret put NAME`.
+Deploys are automatic via GitHub Actions (`.github/workflows/ci-cd.yml`):
+
+- **Every push (any branch) and pull request** → `npm ci`, `astro check`, `astro build`.
+- **Every push to `main`** → after those pass, `astro build && wrangler deploy` to the `growtick-academy` Cloudflare Worker on `academy.growtick.in`, then a smoke test of `/courses`. Runs can also be started by hand (Actions → CI/CD → Run workflow).
+
+One-time GitHub setup (repo → Settings → Secrets and variables → Actions):
+
+| Kind | Name | Value |
+|---|---|---|
+| Secret | `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens → "Edit Cloudflare Workers" template, scoped to the growtick account + `growtick.in` zone |
+| Secret | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages → Account ID |
+| Variable | `PUBLIC_SUPABASE_URL` | same as `.env` |
+| Variable | `PUBLIC_SUPABASE_ANON_KEY` | same as `.env` |
+| Variable | `PUBLIC_TURNSTILE_SITE_KEY` | same as `.env` |
+
+`PUBLIC_*` values are baked into the build, so changing them needs a redeploy. Server secrets (`SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `TURNSTILE_SECRET_KEY`, …) live only in Cloudflare: `npx wrangler secret put NAME` (no redeploy needed). Database migrations are **not** run by CI — apply them with `npx supabase db push --remote` before pushing code that depends on them.
+
+Manual deploy from a laptop still works: `npm run deploy` (after `npx wrangler login`).
 
 ## Contacts
 
