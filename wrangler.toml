@@ -4,9 +4,12 @@
 name = "growtick-academy"
 compatibility_date = "2026-11-13"
 
+# Production custom domain (replaces the old "Coming Soon" page).
+routes = [{ pattern = "academy.growtick.in", custom_domain = true }]
+
 [vars]
-SITE_URL = "http://localhost:4321"
-TURNSTILE_HOSTNAMES = "localhost,127.0.0.1"
+SITE_URL = "https://academy.growtick.in"
+TURNSTILE_HOSTNAMES = "academy.growtick.in"
 
 # Secrets are set in the Cloudflare dashboard or with:
 #   npx wrangler secret put NAME

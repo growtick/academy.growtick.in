@@ -3,6 +3,7 @@ import { SUPABASE_URL } from 'astro:env/server';
 import { serviceDb } from './supabase';
 import { certificateIssued } from './email';
 import { one, many } from './http';
+import { SITE_URL } from './site';
 import gstTemplate from '../assets/certificates/gst-compliance.jpg?inline';
 
 /** Designed certificate artwork per course. Coordinates are in template pixels
@@ -67,7 +68,6 @@ async function renderTemplate(t: CertTemplate, f: { name: string; serial: string
 }
 
 const BUCKET = 'academy-certificates';
-const SITE_URL = import.meta.env.PUBLIC_SITE_URL ?? 'https://academy.growtick.in';
 
 const PURPLE = rgb(0.392, 0.129, 0.651);
 const INK = rgb(0.09, 0.075, 0.114);

@@ -1,7 +1,7 @@
 import { RESEND_API_KEY, RESEND_FROM } from 'astro:env/server';
 import { serviceDb } from './supabase';
+import { SITE_URL as BASE_URL } from './site';
 
-const BASE_URL = import.meta.env.PUBLIC_SITE_URL ?? 'https://academy.growtick.in';
 const FROM = RESEND_FROM || 'Growtick Academy <academy@growtick.in>';
 
 export interface EmailResult {

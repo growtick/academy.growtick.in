@@ -7,12 +7,20 @@ Reference log of what has been done and what remains. Plan: `IMPLEMENTAION_PLAN_
 - **Phase 1 (offline flow): complete in code.** Registration, confirmation, phone-friendly check-in, cash tracking, walk-ins, CSV import/export, bulk + single certificate issue/resend, `/verify`, poster page.
 - **Phase 2 (online learning): complete in code.** Sign-in (link + 6-digit code), dashboard, online enrolment, UPI pay → admin approve/reject, curriculum builder, lesson player (video/reading/download/quiz/live), server-graded quizzes, live-class join + attendance, automatic online certificates, admin learners / payments / email log / settings.
 
+## Deployment (live since 15 Nov 2026)
+
+- Deployed as the **Cloudflare Worker `growtick-academy`** on custom domain **academy.growtick.in** (replaced the old "Coming Soon" page). It is **not** a Pages project, so `git push` does **not** deploy.
+- Deploy: `npm run deploy` (= `astro build && wrangler deploy`), logged in to the info.growtick account (`npx wrangler login`).
+- Worker secrets set: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `RESEND_FROM`. Change with `npx wrangler secret put NAME`.
+- **Missing: `TURNSTILE_SECRET_KEY`** (empty in .env/.dev.vars), so the registration spam check is skipped. Add it with `npx wrangler secret put TURNSTILE_SECRET_KEY` (no redeploy needed).
+- Production builds always link to https://academy.growtick.in (`src/lib/site.ts`), even if `.env` says localhost.
+
 ## Setup checklist
 
 1. ✅ **Migrations 0008–0010 applied to production** (15 Nov 2026, `npx supabase db push --remote`). Verified: anon can't read lesson content, meeting links, quiz questions or profiles; buckets `academy-files` (private) and `academy-public` exist; GST course set to `completion`; signatory = CA Gaurav K Patiyat.
    - 0008 fixes oversold batches (registration function didn't stop after "batch full"), the profiles data leak, missing service-role grants (certificate `emailed_at`, walk-ins, admin screens) and adds a race-free certificate serial.
    - 0009 hides lesson content / meeting links from the public anon key, adds learner read policies, `sort_order` on quiz questions (the admin course editor and quiz player need it), and creates the `academy-files` (private) and `academy-public` storage buckets.
-2. **Supabase Auth email template** (Dashboard → Authentication → Email Templates → Magic Link): include `{{ .Token }}` so the email carries the 6-digit code as well as the link. Add `https://academy.growtick.in/auth/callback` to the Auth redirect URL allow-list.
+2. ⏳ **Supabase Auth email template** (Dashboard → Authentication → Email Templates → Magic Link): include `{{ .Token }}` so the email carries the 6-digit code as well as the link. Add `https://academy.growtick.in/auth/callback` to the Auth redirect URL allow-list.
 3. **Settings** at `/admin/settings`: UPI ID and UPI QR image (before selling a paid course).
 4. ⏳ Make admins (no admin exists yet): `node scripts/make-admin.js <email>` (user must have signed in once).
 
@@ -39,7 +47,7 @@ Reference log of what has been done and what remains. Plan: `IMPLEMENTAION_PLAN_
 - Editing a registrant's name from the admin UI (fix in Supabase before issuing).
 - Certificate revoke button (column exists; set `revoked = true` in Supabase).
 - Home page hero is still hard-coded to the 15 Nov GST batch.
-- `wrangler pages dev` can't start in the dev sandbox (workerd internal error); `npm run build` passes.
+- Supabase Auth settings (template + redirect URL) were not changed automatically because the project is shared with growtick.in.
 
 ## Verification done
 

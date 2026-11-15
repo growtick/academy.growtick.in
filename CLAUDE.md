@@ -8,8 +8,8 @@ Offline-first course platform (Astro 5 + Cloudflare Pages + Supabase). Phase 1 =
 - `npm run build` — production build (`./dist`).
 - `npm run preview` — preview the production build locally.
 - `npm run check` — `astro check` (TypeScript).
-- `npx wrangler pages dev` — run the build output on the Cloudflare runtime before deploying.
-- `npx supabase db push` — apply local migrations to the linked Supabase project (`pbnynqqossnzfuyucqvj`, "Growtick Website"). Requires `supabase login`.
+- `npm run deploy` — build + `wrangler deploy` to the `growtick-academy` Worker on academy.growtick.in (git push does NOT deploy).
+- `npx supabase db push --remote` — apply local migrations to the linked Supabase project (`pbnynqqossnzfuyucqvj`, "Growtick Website"). Requires `supabase login`.
 - `psql -f supabase/seed.sql` — seed a local stack (seed.sql is NOT applied by `db push`).
 
 ## Environment

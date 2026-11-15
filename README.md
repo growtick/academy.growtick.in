@@ -92,7 +92,7 @@ src/pages/api/         /api/register (offline registration), /api/auth/otp
 
 ## Deployment
 
-`git push` to the branch connected to Cloudflare Pages deploys `academy.growtick.in`. Before deploying, run `npm run build` and `npx wrangler pages dev` to confirm it works on the Cloudflare runtime.
+`npm run deploy` builds and deploys the `growtick-academy` Cloudflare Worker, served on `academy.growtick.in`. `git push` alone does not deploy. Secrets: `npx wrangler secret put NAME`.
 
 ## Contacts
 
