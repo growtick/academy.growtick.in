@@ -5,6 +5,8 @@ import { safeNext } from '../lib/http';
 const error = Astro.url.searchParams.get('error');
 const next = safeNext(Astro.url.searchParams.get('next'));
 if (Astro.locals.user) return Astro.redirect(next);
+const adminLogin = next.startsWith('/admin') || Astro.url.searchParams.get('mode') === 'password';
+const ADMIN_EMAIL = 'admin@growtick.in';
 ---
 <Base title="Sign in — Growtick Academy" description="Sign in to your Growtick Academy account." noindex={true}>
   <section class="section">
@@ -16,7 +18,17 @@ if (Astro.locals.user) return Astro.redirect(next);
       {error === 'not_configured' && <p class="notice">Sign-in isn't configured yet. Offline batches need no account: <a href="/courses">register for a batch</a>.</p>}
       {error === 'link' && <p class="notice">That sign-in link has expired or was already used. Request a new one below.</p>}
 
-      <form id="email-form" class="card stack-sm" data-next={next} novalidate>
+      <form id="password-form" class="card stack-sm" data-api="/api/auth/password" hidden={!adminLogin}>
+        <strong>Sign in with password</strong>
+        <input type="hidden" name="next" value={next} />
+        <label class="field"><span>Email address</span><input type="email" name="email" required autocomplete="username" value={adminLogin ? ADMIN_EMAIL : ''} /></label>
+        <label class="field"><span>Password</span><input type="password" name="password" required autocomplete="current-password" /></label>
+        <button type="submit" class="btn">Sign in</button>
+        <output class="form-msg"></output>
+      </form>
+      <p class="small"><a href="#" id="toggle-mode">{adminLogin ? 'Sign in with an email code instead' : 'Sign in with a password instead'}</a></p>
+
+      <form id="email-form" class="card stack-sm" data-next={next} hidden={adminLogin} novalidate>
         <label class="field"><span>Email address</span><input type="email" name="email" required autocomplete="email" /></label>
         <button type="submit" class="btn">Email me a sign-in code</button>
         <p class="form-msg" role="status"></p>
@@ -36,6 +48,16 @@ if (Astro.locals.user) return Astro.redirect(next);
 </Base>
 
 <script>
+  import '../scripts/api-forms';
+  const pwForm = document.getElementById('password-form') as HTMLFormElement;
+  document.getElementById('toggle-mode')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    const showPw = pwForm.hidden;
+    pwForm.hidden = !showPw;
+    (document.getElementById('email-form') as HTMLFormElement).hidden = showPw;
+    (document.getElementById('code-form') as HTMLFormElement).hidden = true;
+    (e.target as HTMLElement).textContent = showPw ? 'Sign in with an email code instead' : 'Sign in with a password instead';
+  });
   const emailForm = document.getElementById('email-form') as HTMLFormElement;
   const next: string = emailForm.dataset.next || '/dashboard';
   const codeForm = document.getElementById('code-form') as HTMLFormElement;
