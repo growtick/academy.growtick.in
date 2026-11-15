@@ -1,5 +1,9 @@
 @import './tokens.css';
 
+/* The `hidden` attribute must win over layout classes (.card, .stack-sm, …
+   set display: grid/flex, which would otherwise keep hidden elements visible). */
+[hidden] { display: none !important; }
+
 /* ---- forms ---------------------------------------------------------- */
 .field { display: grid; gap: 0.3rem; }
 .field > span, .field > label { font-size: 0.85rem; color: var(--muted); font-weight: 600; }

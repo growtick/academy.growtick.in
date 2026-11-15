@@ -53,6 +53,11 @@ const startOnSignup = Astro.url.searchParams.get('mode') === 'signup' && !isAdmi
       signin.hidden = toSignup;
       if (signup) signup.hidden = !toSignup;
       title.textContent = toSignup ? 'Create your account' : 'Sign in';
+      const url = new URL(location.href);
+      if (toSignup) url.searchParams.set('mode', 'signup');
+      else url.searchParams.delete('mode');
+      history.replaceState(null, '', url);
+      (toSignup ? signup : signin)?.querySelector<HTMLInputElement>('input:not([type=hidden])')?.focus();
     })
   );
 </script>
